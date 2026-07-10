@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>context-kernel</title>
+<meta name="description" content="A small, self-hostable context memory for LLMs, served over a token-gated remote MCP connector.">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #1a1a1a;
+    --muted: #555555;
+    --border: #d8d8d8;
+    --code-bg: #f4f4f4;
+    --link: #0552b5;
+    --accent: #444444;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a;
+      --fg: #e8e8e8;
+      --muted: #a3a3a3;
+      --border: #333640;
+      --code-bg: #1e2126;
+      --link: #7bb3ff;
+      --accent: #cccccc;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.55;
+  }
+  main {
+    max-width: 40rem;
+    margin: 0 auto;
+    padding: 3rem 1.25rem 5rem;
+  }
+  h1 {
+    font-size: 1.6rem;
+    margin: 0 0 0.15rem;
+  }
+  .tagline {
+    color: var(--muted);
+    font-size: 1.05rem;
+    margin: 0 0 2.25rem;
+  }
+  h2 {
+    font-size: 1.05rem;
+    margin: 2.5rem 0 0.75rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.35rem;
+  }
+  p {
+    margin: 0.75rem 0;
+  }
+  ul {
+    margin: 0.75rem 0;
+    padding-left: 1.25rem;
+  }
+  li {
+    margin: 0.35rem 0;
+  }
+  code {
+    background: var(--code-bg);
+    padding: 0.1rem 0.35rem;
+    border-radius: 3px;
+    font-size: 0.9em;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+  pre code {
+    background: none;
+    padding: 0;
+  }
+  a {
+    color: var(--link);
+  }
+  .links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.25rem;
+    margin: 0.75rem 0;
+  }
+  footer {
+    margin-top: 3.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  .note {
+    color: var(--muted);
+    font-size: 0.92rem;
+  }
+</style>
+</head>
+<body>
+<main>
+
+<h1>context-kernel</h1>
+<p class="tagline">A small, self-hostable context memory for LLMs.</p>
+
+<p>
+context-kernel answers one question: <em>what context should an authorized Claude
+session know about me right now?</em> You curate a set of Markdown files about
+yourself and your work. A Cloudflare Worker serves them to Claude (Claude Code,
+Desktop, and browser chat) over a single authenticated remote MCP connector.
+Your agents can extend the memory through an append-only journal, but only you
+promote journal notes into the curated source of truth.
+</p>
+
+<p class="note">
+It is not a personal website, resume renderer, CMS, or chatbot. No public
+frontend, no unauthenticated access.
+</p>
+
+<h2>Why</h2>
+<p>
+If you run agentic sessions across several machines and browser chats, you end
+up re-feeding the same context every session: who you are, your goals, how you
+like prose written, how figures should look, how you want answers delivered.
+context-kernel puts that in one place you control, reachable everywhere Claude
+runs, that Claude pulls itself instead of you pasting it.
+</p>
+
+<h2>How it works</h2>
+<pre><code>content/*.md  (you hand-edit; the source of truth)
+      |
+      v
+  build step  -&gt;  Cloudflare KV  -&gt;  Worker (remote MCP server, token-gated)
+                                          |
+                        read tools: get_context / list_sections / get_meta
+                        write tool: append_journal   (agents leave dated notes)
+                                          |
+                                          v
+                   you promote journal notes into content/ by hand</code></pre>
+<p>
+The curated files are sacred and never auto-written. Agents can only append to
+a disposable journal. You review the journal and decide what becomes
+permanent. This manual promotion gate is what keeps the memory from rotting.
+</p>
+
+<h2>Security model</h2>
+<p>
+Every request needs a token; unauthorized requests are rejected before any
+data read. There are two scopes: a read token that serves your context, and a
+separate write token that only allows journal appends. Because promotion is
+manual, a leaked write token can add notes but cannot silently overwrite or
+poison your curated context, since nothing reaches it without you reviewing
+and approving it by hand.
+</p>
+
+<h2>Links</h2>
+<div class="links">
+  <a href="https://github.com/dkritarth/context-kernel">Repository</a>
+  <a href="https://github.com/dkritarth/context-kernel/wiki">Wiki</a>
+  <a href="https://github.com/dkritarth/context-kernel/blob/master/LICENSE">License (MIT)</a>
+</div>
+
+<p class="note">
+The wiki has the deep-dive pages: architecture, security model, deployment,
+and design decisions.
+</p>
+
+<footer>
+  context-kernel is engine source only. The owner's real curated context
+  never leaves their own deployment.
+</footer>
+
+</main>
+</body>
+</html>
