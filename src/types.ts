@@ -38,3 +38,22 @@ export interface Meta {
   source_rev: string;
   content_hash: string;
 }
+
+/**
+ * Shape of one `journal:<ulid>` KV value. Matches HANDOFF.md §4's
+ * `journal:<ulid>` row: "One journal entry (JSON: server, timestamp, tags,
+ * note)". `timestamp` is an ISO 8601 string set server-side at append time
+ * (never trusted from the caller), so `since` filtering in `list_journal` is
+ * meaningful regardless of what a caller claims.
+ */
+export interface JournalEntry {
+  server: string;
+  timestamp: string;
+  tags: string[];
+  note: string;
+}
+
+/** One entry as returned by `list_journal`: the stored entry plus its ULID key. */
+export interface JournalEntryWithId extends JournalEntry {
+  id: string;
+}

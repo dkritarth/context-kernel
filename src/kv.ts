@@ -1,21 +1,27 @@
-// KV read helpers matching the key scheme in HANDOFF.md §4 / CLAUDE.md:
+// KV helpers matching the key scheme in HANDOFF.md §4 / CLAUDE.md:
 //   context:full:md    - full curated context, concatenated markdown
 //   section:<name>:md  - one curated section
 //   meta:json          - { version, generated_at, source_rev, content_hash }
+//   journal:<ulid>     - one journal entry (JSON: server, timestamp, tags, note)
+//   journal:index      - ordered JSON array of journal ULIDs, append-only
 //
-// Phase 4 is read-only. Write helpers for the journal (journal:<ulid>,
-// journal:index) land in Phase 5.
+// Phase 4 covered the read path (curated context). Phase 5 adds the journal
+// write path below - append-only, never touches the curated keys above (see
+// CLAUDE.md's "no curated-write tool" hard rule).
 //
 // Kept thin and dependency-free (no logic beyond key-shape + KV calls) so
-// tools.ts stays the place that decides what a "not found" means for a given
-// tool.
+// tools.ts stays the place that decides what a "not found"/validation error
+// means for a given tool.
 
-import type { Meta } from "./types.js";
+import { newUlid } from "./ulid.js";
+import type { JournalEntry, JournalEntryWithId, Meta } from "./types.js";
 
 const FULL_CONTEXT_KEY = "context:full:md";
 const META_KEY = "meta:json";
 const SECTION_PREFIX = "section:";
 const SECTION_SUFFIX = ":md";
+const JOURNAL_PREFIX = "journal:";
+const JOURNAL_INDEX_KEY = "journal:index";
 
 /** Build the KV key for a named section. */
 export function sectionKey(name: string): string {
@@ -57,4 +63,91 @@ export async function listSectionNames(kv: KVNamespace): Promise<string[]> {
 /** Build metadata (version, generated_at, source_rev, content_hash). `null` if unset/unbuilt. */
 export async function getMeta(kv: KVNamespace): Promise<Meta | null> {
   return kv.get<Meta>(META_KEY, "json");
+}
+
+/** Build the KV key for a journal entry. `id` is expected to be a ULID (see src/ulid.ts). */
+export function journalKey(id: string): string {
+  return `${JOURNAL_PREFIX}${id}`;
+}
+
+/** Read the current `journal:index` array (ULIDs, oldest first). `[]` if unset. */
+async function getJournalIndex(kv: KVNamespace): Promise<string[]> {
+  const index = await kv.get<string[]>(JOURNAL_INDEX_KEY, "json");
+  return index ?? [];
+}
+
+/**
+ * Append one journal entry: writes `journal:<ulid>` and appends the new
+ * ULID to `journal:index`.
+ *
+ * Append-only, matching HANDOFF.md's D2 (agents extend the journal, never
+ * curated content) - this function has no update/delete counterpart.
+ *
+ * Not transactional across the two `put`s: KV has no multi-key transaction
+ * primitive, and this server has a single owner appending from a handful of
+ * trusted servers (not a high-concurrency multi-writer system), so a rare
+ * lost update to `journal:index` under truly concurrent writes is an
+ * accepted tradeoff rather than something worth a distributed-lock
+ * workaround. If it ever matters, `listJournalEntries` could fall back to
+ * `kv.list({ prefix: "journal:" })` (minus the index key itself) to
+ * reconcile - not implemented here since HANDOFF.md calls the index only a
+ * fast-listing optimization.
+ */
+export async function appendJournalEntry(
+  kv: KVNamespace,
+  input: { server: string; note: string; tags?: string[] },
+): Promise<JournalEntryWithId> {
+  const id = newUlid();
+  const entry: JournalEntry = {
+    server: input.server,
+    timestamp: new Date().toISOString(),
+    tags: input.tags ?? [],
+    note: input.note,
+  };
+
+  await kv.put(journalKey(id), JSON.stringify(entry));
+
+  const index = await getJournalIndex(kv);
+  index.push(id);
+  await kv.put(JOURNAL_INDEX_KEY, JSON.stringify(index));
+
+  return { id, ...entry };
+}
+
+/**
+ * List journal entries via `journal:index`, oldest first, optionally
+ * filtered by `since` (inclusive, compares `entry.timestamp >= since` as
+ * ISO 8601 strings - safe because ISO 8601 with a fixed UTC `Z` offset
+ * sorts lexicographically the same as chronologically) and capped by
+ * `limit`.
+ *
+ * `limit` returns the `limit` *most recent* matching entries (not the
+ * oldest) - the more useful default for "what's new since I last checked",
+ * per §5's promotion-workflow use case - while the returned array itself
+ * stays in oldest-first order.
+ */
+export async function listJournalEntries(
+  kv: KVNamespace,
+  filter: { since?: string; limit?: number } = {},
+): Promise<JournalEntryWithId[]> {
+  const ids = await getJournalIndex(kv);
+
+  const entries = await Promise.all(
+    ids.map(async (id) => {
+      const entry = await kv.get<JournalEntry>(journalKey(id), "json");
+      return entry ? { id, ...entry } : null;
+    }),
+  );
+
+  let result = entries.filter((e): e is JournalEntryWithId => e !== null);
+
+  if (filter.since !== undefined) {
+    result = result.filter((e) => e.timestamp >= filter.since!);
+  }
+
+  if (filter.limit !== undefined) {
+    result = result.slice(Math.max(0, result.length - filter.limit));
+  }
+
+  return result;
 }
