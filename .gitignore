@@ -14,6 +14,9 @@ dist/
 .dev.vars
 wrangler.toml
 
+# Local owner state for scripts/promote.ts (which journal ids are reviewed)
+/.promoted-ids.json
+
 # OS noise
 .DS_Store
 

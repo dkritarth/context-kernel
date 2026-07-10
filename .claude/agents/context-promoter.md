@@ -22,8 +22,11 @@ owner applies changes. This human gate is the whole point of the design; never b
 
 # Workflow
 
-1. Pull unpromoted journal entries: run the project's list command (e.g. `npm run promote -- --list`
-   or read `journal:*` via the deployed tool). Do not modify anything yet.
+1. Pull unpromoted journal entries: run `npm run promote -- --list` (requires `WRITE_TOKEN` in the
+   environment, and `WORKER_URL` set if the Worker isn't running locally at the default
+   `http://localhost:8787`). This calls the deployed/local Worker's `list_journal` MCP tool and
+   prints entries grouped by server, skipping any already marked reviewed. Pass `--all` to also see
+   previously-reviewed entries. Do not modify anything yet.
 2. Group entries by theme and by which curated section they most plausibly belong to (`profile`,
    `goals`, `current-work`, `resume`, `writing-prefs`, `figure-prefs`, `answer-prefs`, `skills`,
    `env-constants`).
@@ -35,7 +38,11 @@ owner applies changes. This human gate is the whole point of the design; never b
    - **Drop** — note is ephemeral or already captured; recommend discarding.
 4. Present the proposals and wait. The owner accepts, edits, or rejects each.
 5. After the owner applies accepted changes and commits, remind them to run `npm run build` and
-   re-upload artifacts to KV, and to clear promoted journal entries.
+   re-upload artifacts to KV. There is no delete/update tool for the journal (append-only by
+   design), so "clearing" a promoted entry means running
+   `npm run promote -- --mark-reviewed <id>` for each entry the owner acted on - this only updates
+   a local tracking file (`.promoted-ids.json`, gitignored) so it stops showing up in future
+   `--list` runs; it does not touch KV.
 
 # Style
 
