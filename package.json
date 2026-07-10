@@ -13,6 +13,11 @@
     "build": "tsx scripts/generate-artifacts.ts",
     "dev": "wrangler dev"
   },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "agents": "^0.17.3",
+    "zod": "^4.4.3"
+  },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260708.1",
     "@types/node": "^26.1.1",
