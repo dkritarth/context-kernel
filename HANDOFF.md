@@ -239,9 +239,13 @@ Prerequisites: a Cloudflare account with the owner's domain, `wrangler` CLI logg
 npm install
 cp wrangler.toml.example wrangler.toml      # then fill in KV namespace IDs + route/domain
 
-# 2. Create a KV namespace and paste its id (and a preview id) into wrangler.toml
+# 2. Create KV namespaces and paste their ids (and preview ids) into wrangler.toml
+#    - CONTEXT_KV: for curated context + journal entries
+#    - OAUTH_KV: for OAuth provider state (clients, grants, tokens) — needed for claude.ai connector UI
 wrangler kv namespace create CONTEXT_KV
 wrangler kv namespace create CONTEXT_KV --preview
+wrangler kv namespace create OAUTH_KV
+wrangler kv namespace create OAUTH_KV --preview
 
 # 3. Set secrets (generate long random tokens; store them in a password manager)
 wrangler secret put READ_TOKEN
@@ -259,9 +263,13 @@ wrangler kv bulk put artifacts/kv-bulk.json --binding CONTEXT_KV
 wrangler deploy
 ```
 
-**Connect it to Claude:** add a custom connector / remote MCP server in Claude (Desktop, browser
-settings, or Claude Code MCP config) pointing at the deployed Worker URL, with the read token as the
-credential. For the 6 servers that write journal entries, give them the **write** token only.
+**Connect it to Claude:** 
+- **claude.ai web/Desktop UI**: Use the OAuth flow (the OAuth provider will walk through client registration).
+- **Claude Code CLI / other clients**: Add a custom connector / remote MCP server pointing at the deployed Worker URL, 
+  with the plain-bearer read token as the credential. For the 6 servers that write journal entries, 
+  give them the **write** token only.
+  
+Both flows (OAuth and plain-bearer) work simultaneously; they share the same MCP tools and KV storage.
 
 **Local dev:**
 

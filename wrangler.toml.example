@@ -19,6 +19,14 @@ binding = "CONTEXT_KV"
 id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
 preview_id = "REPLACE_WITH_YOUR_KV_PREVIEW_NAMESPACE_ID"
 
+# OAuth state (clients, grants, tokens) stored separately for isolation.
+# Required for claude.ai connector UI (OAuth flow).
+# Plain-bearer tokens (READ_TOKEN, WRITE_TOKEN) for CLI/servers still work unchanged.
+[[kv_namespaces]]
+binding = "OAUTH_KV"
+id = "REPLACE_WITH_YOUR_OAUTH_KV_NAMESPACE_ID"
+preview_id = "REPLACE_WITH_YOUR_OAUTH_KV_PREVIEW_NAMESPACE_ID"
+
 # Secrets (READ_TOKEN, WRITE_TOKEN) are NOT set here.
 # Set them with: wrangler secret put READ_TOKEN
 #                wrangler secret put WRITE_TOKEN

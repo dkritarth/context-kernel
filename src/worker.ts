@@ -1,53 +1,28 @@
-// Worker entry point: MCP server over HTTP, token-gated. See HANDOFF.md §5-6.
+// Worker entry point: MCP server over HTTP + OAuth layer.
 //
-// Pattern used: `createMcpHandler` from the Cloudflare Agents SDK
-// (`agents/mcp`), which builds a *stateless* MCP fetch handler backed by the
-// MCP TypeScript SDK's streamable-HTTP transport - no Durable Object
-// required. Confirmed against current docs on 2026-07-10:
-//   https://developers.cloudflare.com/agents/model-context-protocol/apis/handler-api/
-//     ("Use it when you want a stateless MCP server that runs in a plain
-//     Worker (no Durable Object). For stateful MCP servers ... use the
-//     McpAgent class instead.")
-// This project has no per-session state to persist (every read tool is a
-// pure KV lookup keyed only by the request's own arguments), so the
-// stateless handler is the right fit and keeps the dependency footprint to
-// `agents` + `@modelcontextprotocol/sdk` + `zod` - no `durable_objects`
-// binding or SQLite migration needed in wrangler.toml.
+// Dual-mode auth (HANDOFF.md §6 + oauth.ts):
+//   - Plain-bearer tokens (READ_TOKEN, WRITE_TOKEN) continue to work as before
+//     for Claude Code CLI and trusted servers. These are validated at the /mcp
+//     endpoint before any MCP dispatch.
+//   - OAuth flow for claude.ai connector UI: clients register via DCR (/.well-known/oauth-protected-resource,
+//     /authorize, /token, /register) and receive read-scoped access tokens.
 //
-// MCP SDK >= 1.26 requires a *new* McpServer instance per request for
-// stateless handlers (a fix for a response cross-leak vulnerability - see
-// the handler-api doc above), so `createServer()` is called fresh on every
-// `fetch`, not hoisted to module scope.
+// Routing:
+//   - OAuth paths (/.well-known/*, /authorize, /token, /register) → OAuthProvider
+//   - /mcp → plain-bearer auth + MCP handler (backward-compatible)
+//   - Everything else → 404
 //
-// Auth handshake: static bearer token (`Authorization: Bearer <token>`),
-// per the owner's locked decision in HANDOFF.md §6 and §12.1. Checked
-// against Anthropic's current MCP connector docs
-// (https://platform.claude.com/docs/en/agents-and-tools/mcp-connector,
-// 2026-07-10): the API's `mcp_servers[].authorization_token` field is sent
-// as a plain bearer credential to the server URL - there is no requirement
-// that a remote MCP server implement an OAuth flow itself; OAuth is only
-// what the *caller* uses to obtain that token when calling a third-party
-// service, not a protocol requirement this server must speak. A static,
-// owner-issued token is exactly the "already have a token" case that field
-// exists for, so HANDOFF's bearer-token assumption stands - no deviation.
-// (Cloudflare's own "Securing MCP servers" guide only documents the OAuth-
-// proxy pattern for servers fronting third-party providers like GitHub,
-// which does not apply here - there is no third party to proxy to.)
+// The OAuthProvider wraps the MCP handler as its `defaultHandler`, so OAuth endpoints
+// are routed by the provider and everything else falls through to the MCP handler.
 //
-// Two-layer auth, per HANDOFF.md §6 ("checks a bearer token before
-// dispatching any MCP request or touching KV. Unauthorized -> 401, no KV
-// read"):
-//   1. Here: a token that matches *neither* READ_TOKEN nor WRITE_TOKEN is
-//      rejected with a bare 401 before createMcpHandler/KV is ever touched.
-//   2. In src/mcp/tools.ts: each individual tool handler re-checks that the
-//      token's scope matches what *that* tool requires (e.g. a valid
-//      READ_TOKEN must still be refused by a future write tool). That
-//      mismatch surfaces as a normal JSON-RPC tool-call error, not a second
-//      HTTP-level 401, since MCP dispatch has legitimately started by then.
+// MCP SDK >= 1.26 requires a *new* McpServer instance per request for stateless
+// handlers (a fix for a response cross-leak vulnerability). `createServer()` is
+// called fresh on every /mcp request, not hoisted to module scope.
 
 import { createMcpHandler } from "agents/mcp";
 import { scopesForToken } from "./mcp/auth.js";
 import { createServer } from "./mcp/tools.js";
+import { createOAuthProvider } from "./mcp/oauth.js";
 import type { Env } from "./types.js";
 
 const MCP_ROUTE = "/mcp";
@@ -66,7 +41,12 @@ function unauthorized(): Response {
   });
 }
 
-export default {
+/**
+ * MCP handler for plain-bearer token flow (backward-compatible with Claude Code CLI).
+ * This is wrapped as the OAuthProvider's defaultHandler, so it gets called for
+ * /mcp requests and any other non-OAuth paths.
+ */
+const mcpHandler: ExportedHandler<Env> = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname !== MCP_ROUTE) {
@@ -93,5 +73,27 @@ export default {
     const headers = new Headers(response.headers);
     headers.set("Cache-Control", "private, max-age=60");
     return new Response(response.body, { status: response.status, headers });
+  },
+};
+
+/**
+ * OAuth provider instance created at module initialization (not per-request).
+ * This is safe because OAuthProvider manages its own state in KV and is
+ * stateless across requests. The provider wraps the MCP handler as its
+ * defaultHandler to delegate non-OAuth requests.
+ */
+let oauthProvider: ReturnType<typeof createOAuthProvider> | null = null;
+
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    // Lazy-initialize OAuth provider on first request with the MCP handler.
+    if (!oauthProvider) {
+      oauthProvider = createOAuthProvider(env, mcpHandler);
+    }
+
+    // Route through OAuth provider, which:
+    //   - Handles OAuth paths internally
+    //   - Delegates /mcp and non-OAuth paths to mcpHandler (defaultHandler)
+    return oauthProvider.fetch(request, env, ctx);
   },
 } satisfies ExportedHandler<Env>;

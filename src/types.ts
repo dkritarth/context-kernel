@@ -3,14 +3,16 @@
 
 /**
  * Workers `Env` binding shape for this Worker. Matches the bindings declared
- * in wrangler.toml(.example): a single KV namespace plus the two auth
- * secrets. This is also structurally compatible with `AuthEnv` from
- * `src/mcp/auth.ts` (which only needs the two token fields), so it can be
- * passed anywhere an `AuthEnv` is expected.
+ * in wrangler.toml(.example): two KV namespaces (one for curated context + journal,
+ * one for OAuth state) plus the two auth secrets. The `Env` is structurally
+ * compatible with `AuthEnv` from `src/mcp/auth.ts` (which only needs the two token
+ * fields), so it can be passed anywhere an `AuthEnv` is expected.
  */
 export interface Env {
   /** Curated context (read path) + journal buffer (write path, Phase 5). */
   CONTEXT_KV: KVNamespace;
+  /** OAuth provider state: clients, grants, tokens (separate namespace for isolation). */
+  OAUTH_KV: KVNamespace;
   READ_TOKEN: string;
   WRITE_TOKEN: string;
 }
