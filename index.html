@@ -172,25 +172,144 @@
     background: var(--code-bg);
     font-weight: 600;
   }
+  .hero {
+    padding: 2rem 0;
+    margin-bottom: 2rem;
+    border-bottom: 2px solid var(--border);
+  }
+  .hero h1 {
+    font-size: 2.2rem;
+    margin: 0 0 0.5rem;
+  }
+  .copy-btn {
+    position: absolute;
+    right: 0.5rem;
+    top: 0.5rem;
+    padding: 0.35rem 0.6rem;
+    background: var(--link);
+    color: #ffffff;
+    border: none;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  pre:hover .copy-btn {
+    opacity: 1;
+  }
+  .copy-btn:hover {
+    background: var(--accent);
+  }
+  pre {
+    position: relative;
+  }
+  .comparison {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.25rem;
+    margin: 1.5rem 0;
+  }
+  @media (max-width: 640px) {
+    .comparison {
+      grid-template-columns: 1fr;
+    }
+  }
+  .comparison-item {
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--code-bg);
+  }
+  .comparison-item h4 {
+    margin-top: 0;
+    color: var(--accent);
+  }
+  .comparison-item ul {
+    margin: 0.5rem 0;
+    padding-left: 1rem;
+  }
+  .comparison-item li {
+    margin: 0.25rem 0;
+    font-size: 0.9rem;
+  }
+  .feature-highlight {
+    background: var(--code-bg);
+    border-left: 4px solid var(--link);
+    padding: 1rem;
+    border-radius: 4px;
+    margin: 1rem 0;
+  }
 </style>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Copy-to-clipboard for code blocks
+  document.querySelectorAll('pre').forEach(pre => {
+    const btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.textContent = 'Copy';
+    btn.onclick = function(e) {
+      e.preventDefault();
+      const code = pre.querySelector('code');
+      navigator.clipboard.writeText(code.textContent).then(() => {
+        btn.textContent = 'Copied!';
+        setTimeout(() => btn.textContent = 'Copy', 2000);
+      });
+    };
+    pre.appendChild(btn);
+  });
+});
+</script>
 </head>
 <body>
 <main>
 
-<h1>context-kernel</h1>
-<p class="tagline">Personal LLM context memory, self-hosted and under your control.</p>
+<h1>🧠 context-kernel</h1>
+<p class="tagline">Self-hostable LLM context memory. Keep your context, preferences, and knowledge in sync across Claude—without re-pasting or semantic drift.</p>
 
 <div class="status">
-  <span class="badge live">LIVE</span>
-  <span>https://context-kernel.dkritarth.workers.dev/mcp</span>
+  <span class="badge">Self-hosted on Cloudflare</span>
+  <span class="note">Deploy your own • Control your data</span>
+</div>
+
+<div class="feature-highlight">
+  <strong>The Problem:</strong> Running agentic sessions across machines? Stop re-pasting who you are, your goals, writing style, and project status. context-kernel keeps it in one place.
 </div>
 
 <p>
-context-kernel answers one question: <em>what context should an authorized Claude session know about me right now?</em> You curate a set of Markdown files about yourself and your work. A Cloudflare Worker serves them to Claude (Claude Code, Desktop, and browser chat) over a single authenticated remote MCP connector. Your agents can extend the memory through an append-only journal, but only you promote journal notes into the curated source of truth.
+You curate a set of Markdown files about yourself and your work. A Cloudflare Worker serves them to Claude (Claude Code, Desktop, chat) via authenticated remote MCP. Your agents extend the memory through an append-only journal—but only <em>you</em> decide what becomes permanent. The curation gate prevents the memory from rotting.
 </p>
 
 <p class="note">
-It is not a personal website, resume renderer, CMS, or chatbot. No public frontend, no unauthenticated access.
+<strong>Not:</strong> a website, resume renderer, CMS, or chatbot. No public access, no unauthenticated reads.
+</p>
+
+<h2>Why Not Vector-Memory Tools?</h2>
+<div class="comparison">
+  <div class="comparison-item">
+    <h4>context-kernel</h4>
+    <ul>
+      <li>Hand-curated Markdown</li>
+      <li>Append-only journal</li>
+      <li>Manual promotion gate</li>
+      <li>Stale content removed by you</li>
+      <li>Trustworthy (you control it)</li>
+    </ul>
+  </div>
+  <div class="comparison-item">
+    <h4>Vector-Memory (mem0, etc.)</h4>
+    <ul>
+      <li>Auto-extracted facts</li>
+      <li>Often direct edits</li>
+      <li>Automatic ranking</li>
+      <li>Relies on decay heuristics</li>
+      <li>Semantic drift risk</li>
+    </ul>
+  </div>
+</div>
+
+<p class="note">
+<strong>The gap:</strong> Vector tools excel at semantic search but have a known failure mode. When facts change (e.g., "Prod: Postgres 14" → "Postgres 16"), both sit in the index. Similarity search hands back whichever scores higher—usually the older, reinforced one. Result: outdated info looks authoritative.
 </p>
 
 <h2>Status</h2>
@@ -306,24 +425,36 @@ It is not a personal website, resume renderer, CMS, or chatbot. No public fronte
   </tbody>
 </table>
 
-<h2>How to use it</h2>
+<h2>Quick Start</h2>
 
-<h3>Claude Code CLI (Today, Works)</h3>
+<h3>Deploy to Cloudflare</h3>
+<pre><code>npm install
+cp wrangler.toml.example wrangler.toml
+wrangler kv namespace create CONTEXT_KV
+wrangler kv namespace create OAUTH_KV
+wrangler secret put READ_TOKEN
+wrangler secret put WRITE_TOKEN
+cp -r content.example content
+npm run build
+wrangler kv bulk put artifacts/kv-bulk.json --binding CONTEXT_KV
+wrangler deploy</code></pre>
+
+<h3>Connect Claude Code</h3>
 <pre><code>claude mcp add --transport http context-kernel \\
-  https://context-kernel.dkritarth.workers.dev/mcp \\
+  https://my-context-kernel.myname.workers.dev/mcp \\
   --header "Authorization: Bearer &lt;READ_TOKEN&gt;"</code></pre>
 <p>
-The skill <code>skill/context-kernel/SKILL.md</code> is auto-enabled and pulls your context on every session start.
+The skill <code>.claude/skills/context-kernel/SKILL.md</code> auto-loads your context on every session start.
 </p>
 
-<h3>Scripts and Agents (Today, Works)</h3>
+<h3>Append via Agents (write-token)</h3>
 <p>
-Local servers, scheduled tasks, and agent workflows can use the write token to append journal entries. The <code>scripts/promote.ts</code> CLI helps you review and promote those notes into curated content by hand.
+Agents and servers use <code>WRITE_TOKEN</code> to append journal entries. You review via <code>npm run promote</code> and hand-promote what becomes permanent.
 </p>
 
-<h3>claude.ai Chat (Not Yet)</h3>
+<h3>OAuth for claude.ai Chat</h3>
 <p>
-Would need OAuth support (currently blocked by provider library incompatibility). Claude Code CLI works as a workaround.
+Not yet implemented (provider library incompatibility). Claude Code CLI + local servers work today.
 </p>
 
 <h2>Repository</h2>
