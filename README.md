@@ -46,6 +46,24 @@ the memory from rotting.
 
 See [SECURITY.md](SECURITY.md) for the short version of this and how to report a leak.
 
+## Connection (Claude Code CLI)
+
+**Status:** Live at `https://context-kernel.dkritarth.workers.dev/mcp` with real curated content.
+
+Add to Claude Code:
+```sh
+claude mcp add --transport http context-kernel https://context-kernel.dkritarth.workers.dev/mcp \
+  --header "Authorization: Bearer <READ_TOKEN>"
+```
+
+Replace `<READ_TOKEN>` with your token (stored in GitHub Actions encrypted secrets, or your password
+manager). The skill `skill/context-kernel/SKILL.md` is auto-enabled and pulls your context on
+session start.
+
+**Known limitation:** OAuth for claude.ai chat is not yet working (the @cloudflare/workers-oauth-provider
+library had runtime incompatibility; would need a custom OAuth implementation). Claude Code CLI
+(above) and local servers/scripts work fine with plain-bearer auth.
+
 ## Run your own
 
 You bring your own `content/` (this repo ships only fake templates in `content.example/`).
@@ -56,6 +74,8 @@ cp wrangler.toml.example wrangler.toml     # fill in your KV namespace ids + rou
 
 wrangler kv namespace create CONTEXT_KV
 wrangler kv namespace create CONTEXT_KV --preview   # paste both ids into wrangler.toml
+wrangler kv namespace create OAUTH_KV
+wrangler kv namespace create OAUTH_KV --preview    # (optional, for future OAuth support)
 wrangler secret put READ_TOKEN
 wrangler secret put WRITE_TOKEN
 
@@ -66,14 +86,12 @@ wrangler kv bulk put artifacts/kv-bulk.json --binding CONTEXT_KV
 wrangler deploy
 ```
 
-Then add a custom connector / remote MCP server in Claude pointing at your Worker URL, using your
-read token. See `HANDOFF.md` §9 for the full deploy walkthrough and local-dev setup.
+Then add to Claude Code (as above). See `HANDOFF.md` §9 for the full deploy walkthrough and
+local-dev setup.
 
-Once connected, drop `skill/context-kernel/SKILL.md` into your Claude Code skills so sessions pull
-context automatically at the start. `scripts/promote.ts` (`npm run promote`) is the human-run
-review step for journal entries; `.claude/agents/context-promoter.md` and
-`.claude/agents/mcp-tester.md` are optional subagents for running that review and for smoke-testing
-a deployed Worker.
+`scripts/promote.ts` (`npm run promote`) is the human-run review step for journal entries;
+`.claude/agents/context-promoter.md` and `.claude/agents/mcp-tester.md` are optional subagents
+for running that review and for smoke-testing a deployed Worker.
 
 ## Prior art, and why not just use it
 
