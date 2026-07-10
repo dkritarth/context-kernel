@@ -1,97 +1,170 @@
-# context-kernel
+# 🧠 context-kernel
 
-A small, self-hostable **context memory** for LLMs. You curate a set of Markdown files about
-yourself and your work; a Cloudflare Worker serves them to Claude (Claude Code, Desktop, and browser
-chat) over a single authenticated remote MCP connector. Your agents can extend the memory through an
-append-only journal, but only *you* promote journal notes into the curated source of truth.
+> **Self-hostable context memory for LLMs.** Keep your professional context, preferences, and evolving knowledge in sync across Claude Code, Desktop, and chat—without re-pasting or semantic drift.
 
-It is deliberately narrow. It is not a personal website, resume renderer, CMS, or chatbot. It is an
-infrastructure layer that answers one question: "what context should an authorized Claude session
-know about me right now?" It answers with fast, predictable payloads.
+---
 
-## Why
+A lightweight, opinionated **context memory** built on Cloudflare Workers and KV. You curate Markdown files about yourself, your work, and your preferences. A Worker serves them to Claude (Claude Code, Desktop, chat) over a secure remote MCP connector. Agents extend the memory via an append-only journal—but only *you* decide what becomes permanent.
 
-If you run agentic sessions across several machines and browser chats, you end up re-feeding the
-same context every session: who you are, your goals, how you like prose written, how figures should
-look, how you want answers delivered. context-kernel puts that in one place you control, reachable
-everywhere Claude runs, that Claude pulls itself instead of you pasting it.
+### What it solves
 
-## How it works
+Running agentic sessions across machines? Stop re-pasting:
+- Who you are and what you do
+- Your communication style and output preferences  
+- How you want figures rendered
+- Evolving project status, goals, and constraints
 
-```text
-content/*.md  (you hand-edit; the source of truth)
-      |
-      v
-  build step  ->  Cloudflare KV  ->  Worker (remote MCP server, token-gated)
-                                          |
-                        read tools: get_context / list_sections / get_meta
-                        write tool: append_journal   (agents leave dated notes)
-                                          |
-                                          v
-                   you promote journal notes into content/ by hand
+Context-kernel puts this in **one place you control**, reachable everywhere Claude runs. Claude pulls it automatically; you never paste again.
+
+---
+
+## Why not vector-memory tools?
+
+Existing personal LLM memory systems (mem0, OpenMemory MCP) use **semantic search over extracted facts**. They're comprehensive—but have a known failure mode:
+
+- Fact stored: "Prod runs Postgres 14"
+- Fact updates: "Prod now runs Postgres 16"  
+- **Both sit in the index.** Similarity search hands back whichever scores higher—usually the older, reinforced one.
+- Result: outdated info looks authoritative.
+
+context-kernel avoids this by design:
+
+| Feature | context-kernel | Vector-memory |
+|---------|---|---|
+| Source of truth | Hand-edited Markdown | Extracted facts in index |
+| Agent write access | Append-only journal | Often can edit directly |
+| Stale data retirement | Manual—you remove it | Hopes retrieval rank decays |
+| Semantic search | No | Yes |
+| Self-maintenance | Low | High |
+| Trustworthiness | High (you control it) | Variable (retrieval can fail) |
+
+**Tradeoff:** Less automatic, no semantic search—but the memory stays **trustworthy** because you maintain it.
+
+---
+
+## Architecture
+
+```
+┌──────────────────────┐
+│  content/*.md        │  ← Hand-curated (sacred, never auto-written)
+│  (your source truth) │
+└──────────────────────┘
+           │
+           v
+┌──────────────────────────────────────────────────────┐
+│                  npm run build                       │
+│   Compile → Validate → KV bulk-upload artifact      │
+└──────────────────────────────────────────────────────┘
+           │
+           v
+┌──────────────────────────────────────────────────────┐
+│  Cloudflare KV                                       │
+│  • context:full:md     (whole context)              │
+│  • section:<name>:md   (individual sections)        │
+│  • journal:*           (append-only agent notes)    │
+└──────────────────────────────────────────────────────┘
+           │
+           v
+┌──────────────────────────────────────────────────────┐
+│  Cloudflare Worker (Remote MCP Server)              │
+│  📡 Token-gated, constant-time auth                 │
+│                                                      │
+│  Read Tools (READ_TOKEN):                           │
+│  • get_context() → full context or section          │
+│  • list_sections() → available topics               │
+│  • get_meta() → metadata (timestamps, versions)     │
+│                                                      │
+│  Write Tools (WRITE_TOKEN):                         │
+│  • append_journal(entry) → dated note               │
+└──────────────────────────────────────────────────────┘
+           │
+           v
+┌──────────────────────────────────────────────────────┐
+│  Claude Code / Desktop / Chat                       │
+│  Connects via MCP connector (auto-loads context)    │
+└──────────────────────────────────────────────────────┘
+           │
+           v
+┌──────────────────────────────────────────────────────┐
+│  npm run promote                                     │
+│  You review journal, cherry-pick what becomes      │
+│  permanent in content/ (manual gate = no rot)       │
+└──────────────────────────────────────────────────────┘
 ```
 
-The curated files are sacred and never auto-written. Agents can only append to a disposable journal.
-You review the journal and decide what becomes permanent. This "manual promotion" gate is what keeps
-the memory from rotting.
+### Key design principles
+
+**Manual promotion gate:** Agents append to a disposable journal. You review and hand-promote what becomes curated. This is what keeps the memory from rotting—stale content is retired because *you* remove it, not by accident.
+
+**Two-token security model:** Read token pulls context; write token appends to journal only. Give write token to servers/agents, read token to yourself. Read token never reaches write operations.
+
+**Markdown as source of truth:** No vector embeddings, no fact extraction, no semantic search. You edit plain text, version it, deploy it. What you see is what agents know.
 
 ## Security model
 
-- Every request needs a token; unauthorized requests are rejected before any data read.
-- Two scopes: a **read** token serves your context, a separate **write** token allows journal
-  appends only. Give servers only the write token.
-- The write token is the higher-risk credential: a leak lets someone add notes, but because
-  promotion is manual, poisoned notes cannot reach your curated context without you seeing them.
-- Rotate tokens if leaked. Secrets live in Cloudflare, never in the repo.
+| Aspect | Detail |
+|--------|--------|
+| **Token auth** | Every request authenticated before any data read |
+| **Read token** | Serves your context to Claude. Safe to embed in Claude Code config. |
+| **Write token** | Allows journal appends only. No read, no delete. Give to agents/servers. |
+| **Leaked write token** | Agent can leave poisoned notes—but manual promotion means it can't silently corrupt your curated context. You see it. |
+| **Leaked read token** | Attacker sees your context. Rotate immediately. |
+| **Token comparison** | Constant-time (no timing attacks). |
+| **Secrets storage** | Cloudflare Workers secrets (encrypted, never in repo). `wrangler.toml` and `.dev.vars` are git-ignored. |
 
-See [SECURITY.md](SECURITY.md) for the short version of this and how to report a leak.
+**See [SECURITY.md](SECURITY.md)** for the detailed threat model and incident reporting.
 
-## Connection (Claude Code CLI)
+---
 
-**Status:** Live at `https://context-kernel.dkritarth.workers.dev/mcp` with real curated content.
+## Quick start
 
-Add to Claude Code:
-```sh
-claude mcp add --transport http context-kernel https://context-kernel.dkritarth.workers.dev/mcp \
-  --header "Authorization: Bearer <READ_TOKEN>"
-```
+### Self-host on Cloudflare
 
-Replace `<READ_TOKEN>` with your token (stored in GitHub Actions encrypted secrets, or your password
-manager). The skill `skill/context-kernel/SKILL.md` is auto-enabled and pulls your context on
-session start.
-
-**Known limitation:** OAuth for claude.ai chat is not yet working (the @cloudflare/workers-oauth-provider
-library had runtime incompatibility; would need a custom OAuth implementation). Claude Code CLI
-(above) and local servers/scripts work fine with plain-bearer auth.
-
-## Run your own
-
-You bring your own `content/` (this repo ships only fake templates in `content.example/`).
+You bring your own `content/` (this repo ships only templates in `content.example/`).
 
 ```sh
 npm install
-cp wrangler.toml.example wrangler.toml     # fill in your KV namespace ids + route
+cp wrangler.toml.example wrangler.toml     # fill in your Cloudflare KV namespace IDs + route
 
 wrangler kv namespace create CONTEXT_KV
-wrangler kv namespace create CONTEXT_KV --preview   # paste both ids into wrangler.toml
+wrangler kv namespace create CONTEXT_KV --preview   # paste both into wrangler.toml
 wrangler kv namespace create OAUTH_KV
-wrangler kv namespace create OAUTH_KV --preview    # (optional, for future OAuth support)
+wrangler kv namespace create OAUTH_KV --preview
+
 wrangler secret put READ_TOKEN
 wrangler secret put WRITE_TOKEN
 
-cp -r content.example content               # then edit content/*.md with your real context
+cp -r content.example content               # edit content/*.md with your context
 
 npm run build
 wrangler kv bulk put artifacts/kv-bulk.json --binding CONTEXT_KV
 wrangler deploy
 ```
 
-Then add to Claude Code (as above). See `HANDOFF.md` §9 for the full deploy walkthrough and
-local-dev setup.
+Note your deployed Worker URL (e.g., `https://my-context-kernel.myname.workers.dev/mcp`).
 
-`scripts/promote.ts` (`npm run promote`) is the human-run review step for journal entries;
-`.claude/agents/context-promoter.md` and `.claude/agents/mcp-tester.md` are optional subagents
-for running that review and for smoke-testing a deployed Worker.
+### Connect Claude Code
+
+```bash
+claude mcp add --transport http context-kernel \
+  https://my-context-kernel.myname.workers.dev/mcp \
+  --header "Authorization: Bearer <READ_TOKEN>"
+```
+
+Replace `<READ_TOKEN>` with your token. On session start, `.claude/skills/context-kernel/SKILL.md` auto-loads your context.
+
+**Known limitation:** OAuth for claude.ai chat not yet working (library runtime incompatibility). Claude Code CLI (above) and local dev work fine with Bearer tokens.
+
+### Full deploy walkthrough
+
+See `HANDOFF.md` §9 for step-by-step with local-dev setup.
+
+## Journal promotion (human review gate)
+
+`scripts/promote.ts` (`npm run promote`) lets you review journal entries before promoting them into curated `content/`. Optional subagents:
+
+- `.claude/agents/context-promoter.md` — runs the promotion review
+- `.claude/agents/mcp-tester.md` — smoke-tests a deployed Worker
 
 ## Prior art, and why not just use it
 
