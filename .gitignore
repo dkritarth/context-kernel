@@ -1,0 +1,28 @@
+# Sacred: owner's real curated context. Never commit.
+/content/
+
+# Generated build output
+/artifacts/
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Cloudflare / secrets
+.dev.vars
+wrangler.toml
+
+# OS noise
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor / cache
+.vscode/
+.idea/
+*.tsbuildinfo
+.cache/

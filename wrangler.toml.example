@@ -1,0 +1,26 @@
+# Copy this file to wrangler.toml and fill in your own values.
+# wrangler.toml (the real one) is gitignored — never commit account IDs, KV
+# namespace IDs, or routes tied to your deployment.
+
+name = "context-kernel"
+main = "src/worker.ts"
+compatibility_date = "2024-11-01"
+
+# account_id = "your-cloudflare-account-id"
+
+# Optional: route this Worker under your own domain instead of *.workers.dev.
+# [[routes]]
+# pattern = "context.example.com/*"
+# zone_name = "example.com"
+
+[[kv_namespaces]]
+binding = "CONTEXT_KV"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+preview_id = "REPLACE_WITH_YOUR_KV_PREVIEW_NAMESPACE_ID"
+
+# Secrets (READ_TOKEN, WRITE_TOKEN) are NOT set here.
+# Set them with: wrangler secret put READ_TOKEN
+#                wrangler secret put WRITE_TOKEN
+# For local dev, put them in a gitignored .dev.vars file instead:
+#   READ_TOKEN=dev-read
+#   WRITE_TOKEN=dev-write
