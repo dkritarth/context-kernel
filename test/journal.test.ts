@@ -58,7 +58,6 @@ const WRITE_TOKEN = "test-write-token";
 function makeEnv(kv: FakeKVNamespace): Env {
   return {
     CONTEXT_KV: kv as unknown as KVNamespace,
-    OAUTH_KV: kv as unknown as KVNamespace,
     READ_TOKEN,
     WRITE_TOKEN,
   };
