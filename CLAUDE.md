@@ -1,4 +1,4 @@
-# CLAUDE.md — context-kernel
+# CLAUDE.md: context-kernel
 
 Working conventions for any Claude Code session in this repo. Read `HANDOFF.md` for the full build
 brief; this file is the always-on context.
@@ -37,14 +37,15 @@ npm run typecheck
 npm test
 npm run build      # content/*.md -> artifacts/kv-bulk.json + meta.json
 npm run dev        # wrangler dev, reads .dev.vars
+npm run promote    # review journal:* entries; never auto-edits content/
 ```
 
 Every change must end green on `npm run typecheck && npm test && npm run build`.
 
 ## KV key scheme
 
-- `context:full:md`, `section:<name>:md`, `meta:json` — curated (read path).
-- `journal:<ulid>`, `journal:index` — journal buffer (write path).
+- `context:full:md`, `section:<name>:md`, `meta:json`: curated (read path).
+- `journal:<ulid>`, `journal:index`: journal buffer (write path).
 
 ## Style
 

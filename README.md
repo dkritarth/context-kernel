@@ -6,8 +6,8 @@ chat) over a single authenticated remote MCP connector. Your agents can extend t
 append-only journal, but only *you* promote journal notes into the curated source of truth.
 
 It is deliberately narrow. It is not a personal website, resume renderer, CMS, or chatbot. It is an
-infrastructure layer that answers one question — "what context should an authorized Claude session
-know about me right now?" — with fast, predictable payloads.
+infrastructure layer that answers one question: "what context should an authorized Claude session
+know about me right now?" It answers with fast, predictable payloads.
 
 ## Why
 
@@ -44,6 +44,8 @@ the memory from rotting.
   promotion is manual, poisoned notes cannot reach your curated context without you seeing them.
 - Rotate tokens if leaked. Secrets live in Cloudflare, never in the repo.
 
+See [SECURITY.md](SECURITY.md) for the short version of this and how to report a leak.
+
 ## Run your own
 
 You bring your own `content/` (this repo ships only fake templates in `content.example/`).
@@ -53,6 +55,7 @@ npm install
 cp wrangler.toml.example wrangler.toml     # fill in your KV namespace ids + route
 
 wrangler kv namespace create CONTEXT_KV
+wrangler kv namespace create CONTEXT_KV --preview   # paste both ids into wrangler.toml
 wrangler secret put READ_TOKEN
 wrangler secret put WRITE_TOKEN
 
@@ -64,27 +67,33 @@ wrangler deploy
 ```
 
 Then add a custom connector / remote MCP server in Claude pointing at your Worker URL, using your
-read token. See the deployment section of the build docs for details and local-dev setup.
+read token. See `HANDOFF.md` §9 for the full deploy walkthrough and local-dev setup.
+
+Once connected, drop `skill/context-kernel/SKILL.md` into your Claude Code skills so sessions pull
+context automatically at the start. `scripts/promote.ts` (`npm run promote`) is the human-run
+review step for journal entries; `.claude/agents/context-promoter.md` and
+`.claude/agents/mcp-tester.md` are optional subagents for running that review and for smoke-testing
+a deployed Worker.
 
 ## Prior art, and why not just use it
 
 Personal memory layers for LLMs already exist and are more mature than this project. Worth
 naming honestly:
 
-- **OpenMemory MCP** (mem0) — self-hostable, user-owned memory across MCP clients, with a
+- **OpenMemory MCP** (mem0): self-hostable, user-owned memory across MCP clients, with a
   dashboard, per-client ACLs, and audit logs.
-- **mem0-mcp-selfhosted** — self-hosted memory for Claude Code with an optional knowledge graph.
-- **Claude Code's own Auto Memory / Session Memory** — already extracts and carries forward notes
+- **mem0-mcp-selfhosted**: self-hosted memory for Claude Code with an optional knowledge graph.
+- **Claude Code's own Auto Memory / Session Memory**: already extracts and carries forward notes
   and summaries between sessions, no extra infra required.
 
 If the goal were only "stop re-pasting who I am," any of these would work today.
 
-The reason this project exists anyway: those tools are **vector-store-backed** — they extract
+The reason this project exists anyway: those tools are **vector-store-backed**, they extract
 facts automatically and retrieve by semantic similarity. That design has a known failure mode,
 described plainly by one such tool's own author: self-hosting fixes *where* memory lives, it does
 not fix *what happens when a stored fact stops being true*. If an agent writes "prod runs on
 Postgres 14" and it later becomes 16, both rows sit in the store, and similarity search hands back
-whichever scores higher — usually the older, more-reinforced one. Nothing retracts a fact.
+whichever scores higher, usually the older, more-reinforced one. Nothing retracts a fact.
 
 That failure mode maps directly onto how a research context actually changes: current projects,
 course load, and priorities shift term to term, and a system that quietly keeps surfacing
@@ -112,10 +121,11 @@ contact-heavy details.
 
 ## Repository hygiene
 
-Committed: engine source, tests, artifact generator, `content.example/` templates, config example.
+Committed: engine source, tests, artifact generator, promotion script, personal skill, subagent
+definitions, `content.example/` templates, config example.
 Ignored: `content/` (your real data), generated `artifacts/`, `node_modules/`, real `wrangler.toml`,
-`.dev.vars`.
+`.dev.vars`, `.promoted-ids.json` (local promotion-review state).
 
 ## License
 
-TODO: choose a license before making the repo public (MIT suggested).
+MIT. See [LICENSE](LICENSE).
