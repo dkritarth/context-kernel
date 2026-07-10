@@ -48,7 +48,6 @@
 import { createMcpHandler } from "agents/mcp";
 import { scopesForToken } from "./mcp/auth.js";
 import { createServer } from "./mcp/tools.js";
-import { createOAuthProvider } from "./mcp/oauth.js";
 import type { Env } from "./types.js";
 
 const MCP_ROUTE = "/mcp";
@@ -67,12 +66,7 @@ function unauthorized(): Response {
   });
 }
 
-/**
- * MCP handler for plain-bearer token flow (backward-compatible with Claude Code CLI).
- * This is wrapped as the OAuthProvider's defaultHandler, so it gets called for
- * /mcp requests and any other non-OAuth paths.
- */
-const mcpHandler: ExportedHandler<Env> = {
+export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname !== MCP_ROUTE) {
@@ -99,27 +93,5 @@ const mcpHandler: ExportedHandler<Env> = {
     const headers = new Headers(response.headers);
     headers.set("Cache-Control", "private, max-age=60");
     return new Response(response.body, { status: response.status, headers });
-  },
-};
-
-/**
- * OAuth provider instance created at module initialization (not per-request).
- * This is safe because OAuthProvider manages its own state in KV and is
- * stateless across requests. The provider wraps the MCP handler as its
- * defaultHandler to delegate non-OAuth requests.
- */
-let oauthProvider: ReturnType<typeof createOAuthProvider> | null = null;
-
-export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    // Lazy-initialize OAuth provider on first request with the MCP handler.
-    if (!oauthProvider) {
-      oauthProvider = createOAuthProvider(env, mcpHandler);
-    }
-
-    // Route through OAuth provider, which:
-    //   - Handles OAuth paths internally
-    //   - Delegates /mcp and non-OAuth paths to mcpHandler (defaultHandler)
-    return oauthProvider.fetch(request, env, ctx);
   },
 } satisfies ExportedHandler<Env>;
