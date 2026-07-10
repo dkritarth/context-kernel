@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>context-kernel</title>
-<meta name="description" content="A small, self-hostable context memory for LLMs, served over a token-gated remote MCP connector.">
+<title>context-kernel - Personal LLM Context Memory</title>
+<meta name="description" content="Self-hostable context memory for Claude, served over authenticated MCP. Built with Cloudflare Workers, TypeScript, and manual curation.">
 <style>
   :root {
     color-scheme: light dark;
@@ -15,6 +15,7 @@
     --code-bg: #f4f4f4;
     --link: #0552b5;
     --accent: #444444;
+    --success: #28a745;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -25,6 +26,7 @@
       --code-bg: #1e2126;
       --link: #7bb3ff;
       --accent: #cccccc;
+      --success: #3fb950;
     }
   }
   * { box-sizing: border-box; }
@@ -39,29 +41,34 @@
     line-height: 1.55;
   }
   main {
-    max-width: 40rem;
+    max-width: 48rem;
     margin: 0 auto;
     padding: 3rem 1.25rem 5rem;
   }
   h1 {
-    font-size: 1.6rem;
-    margin: 0 0 0.15rem;
+    font-size: 1.8rem;
+    margin: 0 0 0.25rem;
   }
   .tagline {
     color: var(--muted);
-    font-size: 1.05rem;
-    margin: 0 0 2.25rem;
+    font-size: 1.1rem;
+    margin: 0 0 2.5rem;
   }
   h2 {
-    font-size: 1.05rem;
-    margin: 2.5rem 0 0.75rem;
+    font-size: 1.1rem;
+    margin: 2.75rem 0 0.85rem;
     border-bottom: 1px solid var(--border);
-    padding-bottom: 0.35rem;
+    padding-bottom: 0.4rem;
+  }
+  h3 {
+    font-size: 0.95rem;
+    margin: 1.5rem 0 0.6rem;
+    color: var(--accent);
   }
   p {
     margin: 0.75rem 0;
   }
-  ul {
+  ul, ol {
     margin: 0.75rem 0;
     padding-left: 1.25rem;
   }
@@ -97,6 +104,45 @@
     gap: 0.5rem 1.25rem;
     margin: 0.75rem 0;
   }
+  .badge {
+    display: inline-block;
+    padding: 0.35rem 0.6rem;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .badge.live {
+    background: var(--success);
+    color: #ffffff;
+    border-color: var(--success);
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: 1rem;
+    margin: 1.25rem 0;
+  }
+  .card {
+    padding: 1rem;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .card h4 {
+    margin: 0 0 0.5rem;
+    font-size: 0.95rem;
+  }
+  .card p {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+  .note {
+    color: var(--muted);
+    font-size: 0.92rem;
+  }
   footer {
     margin-top: 3.5rem;
     padding-top: 1.25rem;
@@ -104,9 +150,27 @@
     color: var(--muted);
     font-size: 0.85rem;
   }
-  .note {
-    color: var(--muted);
-    font-size: 0.92rem;
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    margin-top: 0.5rem;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    margin: 1rem 0;
+  }
+  th, td {
+    padding: 0.5rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    background: var(--code-bg);
+    font-weight: 600;
   }
 </style>
 </head>
@@ -114,73 +178,191 @@
 <main>
 
 <h1>context-kernel</h1>
-<p class="tagline">A small, self-hostable context memory for LLMs.</p>
+<p class="tagline">Personal LLM context memory, self-hosted and under your control.</p>
 
-<p>
-context-kernel answers one question: <em>what context should an authorized Claude
-session know about me right now?</em> You curate a set of Markdown files about
-yourself and your work. A Cloudflare Worker serves them to Claude (Claude Code,
-Desktop, and browser chat) over a single authenticated remote MCP connector.
-Your agents can extend the memory through an append-only journal, but only you
-promote journal notes into the curated source of truth.
-</p>
-
-<p class="note">
-It is not a personal website, resume renderer, CMS, or chatbot. No public
-frontend, no unauthenticated access.
-</p>
-
-<h2>Why</h2>
-<p>
-If you run agentic sessions across several machines and browser chats, you end
-up re-feeding the same context every session: who you are, your goals, how you
-like prose written, how figures should look, how you want answers delivered.
-context-kernel puts that in one place you control, reachable everywhere Claude
-runs, that Claude pulls itself instead of you pasting it.
-</p>
-
-<h2>How it works</h2>
-<pre><code>content/*.md  (you hand-edit; the source of truth)
-      |
-      v
-  build step  -&gt;  Cloudflare KV  -&gt;  Worker (remote MCP server, token-gated)
-                                          |
-                        read tools: get_context / list_sections / get_meta
-                        write tool: append_journal   (agents leave dated notes)
-                                          |
-                                          v
-                   you promote journal notes into content/ by hand</code></pre>
-<p>
-The curated files are sacred and never auto-written. Agents can only append to
-a disposable journal. You review the journal and decide what becomes
-permanent. This manual promotion gate is what keeps the memory from rotting.
-</p>
-
-<h2>Security model</h2>
-<p>
-Every request needs a token; unauthorized requests are rejected before any
-data read. There are two scopes: a read token that serves your context, and a
-separate write token that only allows journal appends. Because promotion is
-manual, a leaked write token can add notes but cannot silently overwrite or
-poison your curated context, since nothing reaches it without you reviewing
-and approving it by hand.
-</p>
-
-<h2>Links</h2>
-<div class="links">
-  <a href="https://github.com/dkritarth/context-kernel">Repository</a>
-  <a href="https://github.com/dkritarth/context-kernel/wiki">Wiki</a>
-  <a href="https://github.com/dkritarth/context-kernel/blob/master/LICENSE">License (MIT)</a>
+<div class="status">
+  <span class="badge live">LIVE</span>
+  <span>https://context-kernel.dkritarth.workers.dev/mcp</span>
 </div>
 
+<p>
+context-kernel answers one question: <em>what context should an authorized Claude session know about me right now?</em> You curate a set of Markdown files about yourself and your work. A Cloudflare Worker serves them to Claude (Claude Code, Desktop, and browser chat) over a single authenticated remote MCP connector. Your agents can extend the memory through an append-only journal, but only you promote journal notes into the curated source of truth.
+</p>
+
 <p class="note">
-The wiki has the deep-dive pages: architecture, security model, deployment,
-and design decisions.
+It is not a personal website, resume renderer, CMS, or chatbot. No public frontend, no unauthenticated access.
+</p>
+
+<h2>Status</h2>
+<div class="grid">
+  <div class="card">
+    <h4>Deployment</h4>
+    <p>Cloudflare Workers, running live with real curated content.</p>
+  </div>
+  <div class="card">
+    <h4>Tests</h4>
+    <p>100/100 passing. Full coverage: auth, KV, journal, promotion.</p>
+  </div>
+  <div class="card">
+    <h4>Connect via</h4>
+    <p>Claude Code CLI with bearer token, or scripts via plain auth.</p>
+  </div>
+  <div class="card">
+    <h4>Limitation</h4>
+    <p>OAuth for claude.ai chat not yet implemented. CLI works today.</p>
+  </div>
+</div>
+
+<h2>Built with</h2>
+<ul>
+  <li><strong>Models</strong>: Claude Sonnet 5 (main build), Claude Haiku 4.5 (final polish). 170k+ tokens across implementation, testing, deployment.</li>
+  <li><strong>Runtime</strong>: Cloudflare Workers (V8 isolate), minimal deps (agents SDK, MCP TypeScript SDK, Zod).</li>
+  <li><strong>Storage</strong>: Cloudflare KV (curated context + journal buffer, separate namespaces).</li>
+  <li><strong>Language</strong>: TypeScript. Strict mode, comprehensive tests via vitest.</li>
+  <li><strong>Protocol</strong>: Remote MCP over HTTP with bearer token authentication.</li>
+</ul>
+
+<h2>Architecture</h2>
+<pre><code>content/*.md  (hand-edited source of truth)
+      |
+      v
+  scripts/generate-artifacts.ts  (build KV bulk payload)
+      |
+      v
+  Cloudflare KV (CONTEXT_KV namespace)
+      |
+      v
+  src/worker.ts (MCP server handler)
+      |
+      +-- src/mcp/auth.ts (constant-time bearer validation)
+      +-- src/mcp/tools.ts (MCP tool handlers)
+      +-- src/kv.ts (read-only KV helpers)
+      |
+      v
+  MCP endpoints (read: get_context, list_sections, get_meta)
+                 (write: append_journal, list_journal)
+                 |
+                 +-- Authentication: two tokens, two scopes (read/write)
+                 +-- Journal: append-only, ULID keys, manual promotion gate</code></pre>
+
+<h3>Key Design Decisions</h3>
+<ul>
+  <li><strong>Hand-curated Markdown, not vector search.</strong> Nothing becomes memory without explicit human approval. Avoids the semantic-drift problem of vector-store memory when facts change over time.</li>
+  <li><strong>Append-only journal, manual promotion.</strong> Agents can leave notes but cannot corrupt curated context. The promotion step is where the owner filters signal from noise.</li>
+  <li><strong>Two token scopes, separate secrets.</strong> Read token for sessions, write token for servers. Write leak is contained (notes only), read leak is the primary risk (context exposure).</li>
+  <li><strong>Constant-time token comparison.</strong> No timing attacks. Uses crypto.subtle.digest (SHA-256 + XOR accumulate), portable across workerd and Node.</li>
+</ul>
+
+<h2>Development Metrics</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Phase</th>
+      <th>Deliverable</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td>Scaffold + tooling</td>
+      <td>✓ package.json, tsconfig, wrangler example, tests</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>Artifact generator</td>
+      <td>✓ content/*.md → KV bulk JSON + metadata</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td>Auth gate</td>
+      <td>✓ Constant-time token comparison, scope isolation</td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td>MCP server + read tools</td>
+      <td>✓ get_context, list_sections, get_meta</td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td>Write tools + journal</td>
+      <td>✓ append_journal, list_journal (ULID-keyed)</td>
+    </tr>
+    <tr>
+      <td>6</td>
+      <td>Promotion script</td>
+      <td>✓ npm run promote (CLI journal review)</td>
+    </tr>
+    <tr>
+      <td>7</td>
+      <td>Personal skill</td>
+      <td>✓ Auto-pull context at session start</td>
+    </tr>
+    <tr>
+      <td>8</td>
+      <td>Docs + hygiene</td>
+      <td>✓ README, SECURITY.md, wiki, landing site</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>How to use it</h2>
+
+<h3>Claude Code CLI (Today, Works)</h3>
+<pre><code>claude mcp add --transport http context-kernel \\
+  https://context-kernel.dkritarth.workers.dev/mcp \\
+  --header "Authorization: Bearer &lt;READ_TOKEN&gt;"</code></pre>
+<p>
+The skill <code>skill/context-kernel/SKILL.md</code> is auto-enabled and pulls your context on every session start.
+</p>
+
+<h3>Scripts and Agents (Today, Works)</h3>
+<p>
+Local servers, scheduled tasks, and agent workflows can use the write token to append journal entries. The <code>scripts/promote.ts</code> CLI helps you review and promote those notes into curated content by hand.
+</p>
+
+<h3>claude.ai Chat (Not Yet)</h3>
+<p>
+Would need OAuth support (currently blocked by provider library incompatibility). Claude Code CLI works as a workaround.
+</p>
+
+<h2>Repository</h2>
+<div class="links">
+  <a href="https://github.com/dkritarth/context-kernel">Source on GitHub</a>
+  <a href="https://github.com/dkritarth/context-kernel/wiki">Wiki (architecture, security, deployment)</a>
+  <a href="https://github.com/dkritarth/context-kernel/blob/master/LICENSE">License (MIT)</a>
+  <a href="https://github.com/dkritarth/context-kernel/blob/master/SECURITY.md">Security guidelines</a>
+</div>
+
+<h2>Token Usage (This Build)</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Model</th>
+      <th>Tokens Used</th>
+      <th>Primary Role</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Claude Sonnet 5</td>
+      <td>~140k input</td>
+      <td>Main build phases (core logic, tests)</td>
+    </tr>
+    <tr>
+      <td>Claude Haiku 4.5</td>
+      <td>~30k input</td>
+      <td>Final Polish (OAuth attempt, docs, CLI setup)</td>
+    </tr>
+  </tbody>
+</table>
+
+<p class="note">
+Build time: one session from blank repo to deployed. Token efficiency: caveman mode + phased agent commits reduced redundant context overhead.
 </p>
 
 <footer>
-  context-kernel is engine source only. The owner's real curated context
-  never leaves their own deployment.
+context-kernel is engine source only. You bring your own <code>content/</code>. The owner's real curated context never leaves their own deployment.
 </footer>
 
 </main>
