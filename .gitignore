@@ -13,6 +13,7 @@ dist/
 # Cloudflare / secrets
 .dev.vars
 wrangler.toml
+.wrangler/
 
 # Local owner state for scripts/promote.ts (which journal ids are reviewed)
 /.promoted-ids.json
