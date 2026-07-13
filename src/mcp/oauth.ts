@@ -10,17 +10,21 @@
 //     This preserves backward compatibility: existing plain-bearer clients keep working.
 //  2. DCR (Dynamic Client Registration): accepts claude.ai's self-registration with
 //     minimal validation (redirect_uri whitelist only).
-//  3. OAuth endpoints (/.well-known/oauth-authorization-server, /authorize, /token, etc.)
-//     are routed through OAuthProvider alongside the existing /mcp MCP endpoint.
+//  3. /authorize: the library only reports this URL in its metadata — it does NOT
+//     implement the endpoint itself. We render a one-field login form (owner's
+//     READ_TOKEN) here and gate completeAuthorization() on it, since without that
+//     check anyone who reaches /authorize would mint themselves a valid read-scope
+//     access token with no credential at all.
 //  4. MCP scope isolation: all OAuth-issued tokens grant only "read" scope (get_context,
 //     list_sections, get_meta). Plain-bearer tokens retain their original read/write split.
 
-import { OAuthProvider } from "@cloudflare/workers-oauth-provider";
+import { OAuthProvider, getOAuthApi } from "@cloudflare/workers-oauth-provider";
 import type {
   ResolveExternalTokenInput,
   ResolveExternalTokenResult,
   ClientRegistrationCallbackOptions,
   ClientRegistrationCallbackResult,
+  OAuthProviderOptions,
 } from "@cloudflare/workers-oauth-provider";
 import { scopesForToken } from "./auth.js";
 import type { Env } from "../types.js";
@@ -108,30 +112,32 @@ async function clientRegistrationCallback(
 }
 
 /**
- * Build and return an OAuthProvider instance configured for this MCP server.
- * This provider:
- *  - Accepts OAuth authorization code flow
- *  - Accepts plain-bearer token validation via resolveExternalToken
- *  - Implements DCR for claude.ai registration
- *  - Stores all state in OAUTH_KV
- *  - Issues access tokens with "read" scope only
- *
- * The provider is configured with defaultHandler that accepts the MCP handler.
- * When a request comes in, the OAuthProvider:
- *  - Routes OAuth paths (/.well-known/*, /authorize, /token, /register) internally
- *  - Delegates all other requests (including /mcp) to defaultHandler (the MCP handler)
+ * Build the OAuthProviderOptions shared by both the OAuthProvider instance
+ * (which handles /token, /register, /.well-known/*) and getOAuthApi (which
+ * we use in handleAuthorize to parse/complete the auth request for the
+ * /authorize endpoint the library expects *us* to implement).
  */
-export function createOAuthProvider(
+function buildProviderOptions(
   env: Env,
+  apiHandler: Required<Pick<ExportedHandler<Env>, "fetch">>,
   defaultHandler: ExportedHandler<Env>,
   requestUrl: URL,
-): OAuthProvider<Env> {
+): OAuthProviderOptions<Env> {
   // Dynamically extract base URL from request to support any deployed domain.
   // Falls back to a generic localhost URL for dev if origin is unset.
   const baseUrl = requestUrl.origin || "http://localhost:8787";
   const baseUrlWithSlash = baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
 
-  return new OAuthProvider({
+  return {
+    // /mcp is an API route: the library validates the presented token
+    // (its own issued token, or a plain-bearer token via
+    // resolveExternalToken below) before invoking apiHandler with the
+    // resolved scope in ctx.props. Unauthenticated /mcp requests and all
+    // other paths fall through to defaultHandler.
+    apiRoute: "/mcp",
+    apiHandler,
+    defaultHandler,
+
     // OAuth server metadata endpoints and token endpoint.
     authorizeEndpoint: baseUrlWithSlash + "authorize",
     tokenEndpoint: baseUrlWithSlash + "token",
@@ -140,11 +146,6 @@ export function createOAuthProvider(
     // Token lifetime: 1 hour for access, 30 days for refresh (library defaults).
     // Scopes available to this server: only "read" (write is not exposed).
     scopesSupported: ["read"],
-
-    // Default handler: the MCP handler. The OAuthProvider delegates non-OAuth
-    // requests (including /mcp) to this handler, which performs plain-bearer
-    // token validation as before.
-    defaultHandler,
 
     // Callback: validate tokens that are not in OAUTH_KV.
     // This is where we accept plain-bearer READ_TOKEN / WRITE_TOKEN and treat them
@@ -162,7 +163,108 @@ export function createOAuthProvider(
       bearer_methods_supported: ["header"],
       scopes_supported: ["read"],
     },
+  };
+}
+
+/**
+ * Build and return an OAuthProvider instance configured for this MCP server.
+ * Handles /token, /register, /.well-known/* internally, validates /mcp
+ * (apiRoute), and falls through to defaultHandler for everything else —
+ * including /authorize, which handleAuthorize (below) implements.
+ */
+export function createOAuthProvider(
+  env: Env,
+  apiHandler: Required<Pick<ExportedHandler<Env>, "fetch">>,
+  defaultHandler: ExportedHandler<Env>,
+  requestUrl: URL,
+): OAuthProvider<Env> {
+  return new OAuthProvider(buildProviderOptions(env, apiHandler, defaultHandler, requestUrl));
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function renderLoginForm(actionUrl: string, error?: string): Response {
+  const errorHtml = error
+    ? `<p style="color:#b00;margin:0 0 1rem">${escapeHtml(error)}</p>`
+    : "";
+  const html = `<!doctype html>
+<html><head><meta charset="utf-8"><title>context-kernel</title></head>
+<body style="font-family:system-ui,sans-serif;max-width:28rem;margin:4rem auto;padding:0 1rem">
+  <h1 style="font-size:1.1rem">Authorize access to context-kernel</h1>
+  <p>Enter your READ_TOKEN to grant this client read-only access to your curated context.</p>
+  ${errorHtml}
+  <form method="POST" action="${escapeHtml(actionUrl)}">
+    <input type="password" name="token" placeholder="READ_TOKEN" autofocus
+      style="width:100%;padding:.5rem;box-sizing:border-box;margin-bottom:.75rem">
+    <button type="submit" style="padding:.5rem 1rem">Authorize</button>
+  </form>
+</body></html>`;
+  return new Response(html, {
+    status: 200,
+    headers: { "Content-Type": "text/html; charset=UTF-8" },
   });
+}
+
+/**
+ * Implements the /authorize endpoint the library's metadata points at but
+ * does not itself serve. Single-user login: the owner's plain-bearer
+ * READ_TOKEN doubles as the OAuth login credential. GET renders the form;
+ * POST verifies the submitted token (constant-time, via scopesForToken) and,
+ * only on a match, completes the authorization and redirects back to the
+ * client with an authorization code. No token, no grant — this is what
+ * closes the "anyone can DCR + hit /authorize and mint a token" hole.
+ */
+export async function handleAuthorize(
+  request: Request,
+  env: Env,
+  apiHandler: Required<Pick<ExportedHandler<Env>, "fetch">>,
+  defaultHandler: ExportedHandler<Env>,
+  requestUrl: URL,
+): Promise<Response> {
+  const options = buildProviderOptions(env, apiHandler, defaultHandler, requestUrl);
+  const helpers = getOAuthApi(options, env);
+
+  // The submitted form action carries the original OAuth query params, so
+  // parseAuthRequest (which reads from the URL) works for GET and POST alike.
+  const authRequest = await helpers.parseAuthRequest(request);
+
+  if (request.method === "GET") {
+    return renderLoginForm(requestUrl.pathname + requestUrl.search);
+  }
+
+  if (request.method === "POST") {
+    const form = await request.formData();
+    const submittedToken = form.get("token");
+    const scopes =
+      typeof submittedToken === "string"
+        ? await scopesForToken(submittedToken, env)
+        : new Set<string>();
+
+    if (!scopes.has("read")) {
+      return renderLoginForm(requestUrl.pathname + requestUrl.search, "Invalid token.");
+    }
+
+    const { redirectTo } = await helpers.completeAuthorization({
+      request: authRequest,
+      userId: "owner",
+      metadata: { source: "context-kernel-login" },
+      scope: ["read"],
+      props: {
+        scope: ["read"],
+        source: "oauth_login",
+      },
+    });
+
+    return new Response(null, { status: 302, headers: { Location: redirectTo } });
+  }
+
+  return new Response("Method not allowed", { status: 405 });
 }
 
 /**
