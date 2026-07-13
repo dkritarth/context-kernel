@@ -4,6 +4,8 @@
 
 **Status:** Live. Connects via Bearer token (Claude Code CLI) and OAuth (claude.ai connector UI), both verified end-to-end against a deployed Worker.
 
+> *"bro started building tools to help him write research paper better"* — a friend, watching this happen
+
 <p align="center">
   <img src="assets/claude-connector.png" alt="Claude connector settings showing context-kernel's 5 MCP tools, always-allowed" width="49%">
   <img src="assets/cloudflare-dashboard.png" alt="Cloudflare Workers dashboard for context-kernel, showing both KV bindings live" width="49%">
@@ -17,7 +19,7 @@ A lightweight, opinionated **context memory** built on Cloudflare Workers and KV
 
 Running agentic sessions across machines? Stop re-pasting:
 - Who you are and what you do
-- Your communication style and output preferences  
+- Your communication style and output preferences
 - How you want figures rendered
 - Evolving project status, goals, and constraints
 
@@ -25,12 +27,76 @@ Context-kernel puts this in **one place you control**, reachable everywhere Clau
 
 ---
 
-## Why not vector-memory tools?
+## Quick start
+
+### Self-host on Cloudflare
+
+You bring your own `content/` (this repo ships only templates in `content.example/`).
+
+```sh
+npm install
+cp wrangler.toml.example wrangler.toml     # fill in your Cloudflare KV namespace IDs + route
+
+wrangler kv namespace create CONTEXT_KV
+wrangler kv namespace create CONTEXT_KV --preview   # paste both into wrangler.toml
+wrangler kv namespace create OAUTH_KV
+wrangler kv namespace create OAUTH_KV --preview
+
+wrangler secret put READ_TOKEN
+wrangler secret put WRITE_TOKEN
+
+cp -r content.example content               # edit content/*.md with your context
+
+npm run build
+wrangler kv bulk put artifacts/kv-bulk.json --binding CONTEXT_KV
+wrangler deploy
+```
+
+Note your deployed Worker URL (e.g., `https://my-context-kernel.myname.workers.dev/mcp`).
+
+### Connect Claude Code
+
+```bash
+claude mcp add --transport http context-kernel \
+  https://my-context-kernel.myname.workers.dev/mcp \
+  --header "Authorization: Bearer <READ_TOKEN>"
+```
+
+Replace `<READ_TOKEN>` with your token. On session start, `.claude/skills/context-kernel/SKILL.md` auto-loads your context.
+
+### Connect claude.ai chat interface (via OAuth)
+
+1. In Claude (Desktop or browser), go to **Settings** → **Connectors**
+2. **Add custom connector** with the deployed Worker's base URL, `/mcp` endpoint (e.g., `https://my-context-kernel.myname.workers.dev/mcp`)
+3. Claude registers itself automatically (Dynamic Client Registration, RFC 7591)—no manual client ID or secret
+4. You'll land on a one-field login page asking for your `READ_TOKEN` (the same token from `wrangler secret put READ_TOKEN`)—enter it once to authorize
+5. All OAuth-issued tokens grant **read-only access** to your context (write access remains restricted to direct plain-bearer `WRITE_TOKEN` only)
+
+The OAuth layer is optional; existing Claude Code + Bearer token setups continue to work unchanged, and the two flows share nothing but the underlying `/mcp` endpoint.
+
+### Local dev
+
+```sh
+printf "READ_TOKEN=dev-read\nWRITE_TOKEN=dev-write\n" > .dev.vars
+npm run dev
+```
+
+### Journal promotion (human review gate)
+
+`scripts/promote.ts` (`npm run promote`) lets you review journal entries before promoting them into curated `content/`. Optional subagents:
+
+- `.claude/agents/context-promoter.md` — runs the promotion review
+- `.claude/agents/mcp-tester.md` — smoke-tests a deployed Worker
+
+---
+
+<details>
+<summary><strong>Why not vector-memory tools?</strong></summary>
 
 Existing personal LLM memory systems (mem0, OpenMemory MCP) use **semantic search over extracted facts**. They're comprehensive—but have a known failure mode:
 
 - Fact stored: "Prod runs Postgres 14"
-- Fact updates: "Prod now runs Postgres 16"  
+- Fact updates: "Prod now runs Postgres 16"
 - **Both sit in the index.** Similarity search hands back whichever scores higher—usually the older, reinforced one.
 - Result: outdated info looks authoritative.
 
@@ -47,9 +113,10 @@ context-kernel avoids this by design:
 
 **Tradeoff:** Less automatic, no semantic search—but the memory stays **trustworthy** because you maintain it.
 
----
+</details>
 
-## Architecture
+<details>
+<summary><strong>Architecture</strong></summary>
 
 ```
 ┌──────────────────────┐
@@ -107,7 +174,10 @@ context-kernel avoids this by design:
 
 **Markdown as source of truth:** No vector embeddings, no fact extraction, no semantic search. You edit plain text, version it, deploy it. What you see is what agents know.
 
-## Security model
+</details>
+
+<details>
+<summary><strong>Security model</strong></summary>
 
 | Aspect | Detail |
 |--------|--------|
@@ -121,72 +191,10 @@ context-kernel avoids this by design:
 
 **See [SECURITY.md](SECURITY.md)** for the detailed threat model and incident reporting.
 
----
+</details>
 
-## Quick start
-
-### Self-host on Cloudflare
-
-You bring your own `content/` (this repo ships only templates in `content.example/`).
-
-```sh
-npm install
-cp wrangler.toml.example wrangler.toml     # fill in your Cloudflare KV namespace IDs + route
-
-wrangler kv namespace create CONTEXT_KV
-wrangler kv namespace create CONTEXT_KV --preview   # paste both into wrangler.toml
-wrangler kv namespace create OAUTH_KV
-wrangler kv namespace create OAUTH_KV --preview
-
-wrangler secret put READ_TOKEN
-wrangler secret put WRITE_TOKEN
-
-cp -r content.example content               # edit content/*.md with your context
-
-npm run build
-wrangler kv bulk put artifacts/kv-bulk.json --binding CONTEXT_KV
-wrangler deploy
-```
-
-Note your deployed Worker URL (e.g., `https://my-context-kernel.myname.workers.dev/mcp`).
-
-### Connect Claude Code
-
-```bash
-claude mcp add --transport http context-kernel \
-  https://my-context-kernel.myname.workers.dev/mcp \
-  --header "Authorization: Bearer <READ_TOKEN>"
-```
-
-Replace `<READ_TOKEN>` with your token. On session start, `.claude/skills/context-kernel/SKILL.md` auto-loads your context.
-
-### Connect claude.ai chat interface (via OAuth)
-
-The Worker also exposes OAuth endpoints for claude.ai's connector UI. To connect:
-
-1. In Claude (Desktop or browser), go to **Settings** → **Connectors**
-2. **Add custom connector** with the deployed Worker's base URL, `/mcp` endpoint (e.g., `https://my-context-kernel.myname.workers.dev/mcp`)
-3. Claude registers itself automatically (Dynamic Client Registration, RFC 7591)—no manual client ID or secret
-4. You'll land on a one-field login page asking for your `READ_TOKEN` (the same token from `wrangler secret put READ_TOKEN`)—enter it once to authorize
-5. All OAuth-issued tokens grant **read-only access** to your context (write access remains restricted to direct plain-bearer `WRITE_TOKEN` only)
-
-The OAuth layer is optional; existing Claude Code + Bearer token setups continue to work unchanged, and the two flows share nothing but the underlying `/mcp` endpoint.
-
-### Local dev
-
-```sh
-printf "READ_TOKEN=dev-read\nWRITE_TOKEN=dev-write\n" > .dev.vars
-npm run dev
-```
-
-## Journal promotion (human review gate)
-
-`scripts/promote.ts` (`npm run promote`) lets you review journal entries before promoting them into curated `content/`. Optional subagents:
-
-- `.claude/agents/context-promoter.md` — runs the promotion review
-- `.claude/agents/mcp-tester.md` — smoke-tests a deployed Worker
-
-## Prior art, and why not just use it
+<details>
+<summary><strong>Prior art, and why not just use it</strong></summary>
 
 Personal memory layers for LLMs already exist and are more mature than this project. Worth
 naming honestly:
@@ -224,13 +232,19 @@ The tradeoff is honest: this is less automatic than a vector-memory tool, and it
 semantic search over your history. It optimizes for the memory being *trustworthy* over it being
 *self-maintaining*.
 
-## Sections
+</details>
+
+<details>
+<summary><strong>Content sections</strong></summary>
 
 `profile`, `goals`, `current-work`, `resume`, `writing-prefs`, `figure-prefs`, `answer-prefs`,
 `skills`, `env-constants`. Add only what an authorized Claude session should see; leave out
 contact-heavy details.
 
-## Build stats
+</details>
+
+<details>
+<summary><strong>Build stats</strong></summary>
 
 This project was built end-to-end with Claude Code (Sonnet 5 + Haiku 4.5, caveman-compressed
 communication mode), across all sessions from scaffold to deployed OAuth fix.
@@ -244,12 +258,17 @@ communication mode), across all sessions from scaffold to deployed OAuth fix.
 | Cache-creation tokens (all sessions) | ~2.6M |
 | Estimated total cost | ~$26 (Sonnet 5 intro + Haiku 4.5 pricing) |
 
-## Repository hygiene
+</details>
+
+<details>
+<summary><strong>Repository hygiene</strong></summary>
 
 Committed: engine source, tests, artifact generator, promotion script, personal skill, subagent
 definitions, `content.example/` templates, config example.
 Ignored: `content/` (your real data), generated `artifacts/`, `node_modules/`, real `wrangler.toml`,
 `.dev.vars`, `.promoted-ids.json` (local promotion-review state).
+
+</details>
 
 ## License
 
