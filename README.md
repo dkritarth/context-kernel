@@ -167,9 +167,12 @@ The Worker also exposes OAuth endpoints for claude.ai's connector UI. To connect
 
 The OAuth layer is optional; existing Claude Code + Bearer token setups continue to work unchanged, and the two flows share nothing but the underlying `/mcp` endpoint.
 
-### Full deploy walkthrough
+### Local dev
 
-See `HANDOFF.md` §9 for step-by-step with local-dev setup.
+```sh
+printf "READ_TOKEN=dev-read\nWRITE_TOKEN=dev-write\n" > .dev.vars
+npm run dev
+```
 
 ## Journal promotion (human review gate)
 
@@ -224,15 +227,17 @@ contact-heavy details.
 
 ## Build stats
 
-This build ran end-to-end with Claude Code (Sonnet 5, caveman-compressed communication mode).
+This project was built end-to-end with Claude Code (Sonnet 5 + Haiku 4.5, caveman-compressed
+communication mode), across all sessions from scaffold to deployed OAuth fix.
 
 | Metric | Value |
 |---|---|
-| Commits | 23 |
+| Commits | 19 |
 | Test coverage | 100/100 passing |
-| Session output tokens | ~100K |
-| Cache-read tokens | ~29.2M |
-| Estimated session cost | ~$6–10 (Sonnet 5 intro pricing: $2/$10 per MTok in/out through 2026-08-31) |
+| Output tokens (all sessions) | ~353K |
+| Cache-read tokens (all sessions) | ~102.9M |
+| Cache-creation tokens (all sessions) | ~2.6M |
+| Estimated total cost | ~$26 (Sonnet 5 intro + Haiku 4.5 pricing) |
 
 ## Repository hygiene
 

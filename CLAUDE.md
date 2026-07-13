@@ -1,7 +1,6 @@
 # CLAUDE.md: context-kernel
 
-Working conventions for any Claude Code session in this repo. Read `HANDOFF.md` for the full build
-brief; this file is the always-on context.
+Working conventions for any Claude Code session in this repo.
 
 ## What this project is
 
@@ -28,7 +27,8 @@ append-only journal that a human promotes by hand. Not a website, not a public A
 - Runtime: Cloudflare Workers (V8 isolate). Keep deps minimal.
 - Storage: Cloudflare KV.
 - Language: TypeScript.
-- Protocol: remote MCP over HTTP (see `HANDOFF.md` §5–§6).
+- Protocol: remote MCP over HTTP, dual auth (plain bearer + OAuth via `@cloudflare/workers-oauth-provider`),
+  both converging on `/mcp`. See `src/worker.ts` and `src/mcp/oauth.ts` for the routing and scope model.
 
 ## Commands
 
@@ -49,11 +49,11 @@ Every change must end green on `npm run typecheck && npm test && npm run build`.
 
 ## Style
 
-- Small, reviewable commits, one build phase at a time (`HANDOFF.md` §8).
+- Small, reviewable commits.
 - Prose in docs and READMEs: clear and plain. No em-dashes in owner-facing docs (owner preference).
 - Do not add dependencies without a reason noted in the commit message.
 
 ## When in doubt
 
-Raise it as one of the open questions in `HANDOFF.md` §12 rather than deciding silently. The owner
-wants the curation gate and the read/write split preserved above all.
+Raise it rather than deciding silently. The owner wants the curation gate and the read/write split
+preserved above all.
