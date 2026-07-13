@@ -240,6 +240,30 @@
     border-radius: 4px;
     margin: 1rem 0;
   }
+  .screenshots {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin: 1.5rem 0;
+  }
+  .screenshots img {
+    width: 100%;
+    height: auto;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    display: block;
+  }
+  .screenshots figcaption {
+    margin-top: 0.4rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+    text-align: center;
+  }
+  @media (max-width: 640px) {
+    .screenshots {
+      grid-template-columns: 1fr;
+    }
+  }
 </style>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -270,6 +294,17 @@ document.addEventListener('DOMContentLoaded', function() {
 <div class="status">
   <span class="badge">Self-hosted on Cloudflare</span>
   <span class="note">Deploy your own • Control your data</span>
+</div>
+
+<div class="screenshots">
+  <figure>
+    <img src="assets/claude-connector.png" alt="Claude connector settings showing context-kernel's 5 MCP tools, always-allowed">
+    <figcaption>Connected in Claude's connector UI — all 5 MCP tools live</figcaption>
+  </figure>
+  <figure>
+    <img src="assets/cloudflare-dashboard.png" alt="Cloudflare Workers dashboard for context-kernel, showing both KV bindings live">
+    <figcaption>Deployed Worker — CONTEXT_KV + OAUTH_KV bindings live</figcaption>
+  </figure>
 </div>
 
 <div class="feature-highlight">
