@@ -324,11 +324,11 @@ You curate a set of Markdown files about yourself and your work. A Cloudflare Wo
   </div>
   <div class="card">
     <h4>Connect via</h4>
-    <p>Claude Code CLI with bearer token, or scripts via plain auth.</p>
+    <p>Claude Code CLI (bearer token) or claude.ai connector UI (OAuth) — both verified live.</p>
   </div>
   <div class="card">
-    <h4>Limitation</h4>
-    <p>OAuth for claude.ai chat not yet implemented. CLI works today.</p>
+    <h4>OAuth</h4>
+    <p>DCR + single-field login page gated on READ_TOKEN. Issues read-only tokens only.</p>
   </div>
 </div>
 
@@ -338,7 +338,7 @@ You curate a set of Markdown files about yourself and your work. A Cloudflare Wo
   <li><strong>Runtime</strong>: Cloudflare Workers (V8 isolate), minimal deps (agents SDK, MCP TypeScript SDK, Zod).</li>
   <li><strong>Storage</strong>: Cloudflare KV (curated context + journal buffer, separate namespaces).</li>
   <li><strong>Language</strong>: TypeScript. Strict mode, comprehensive tests via vitest.</li>
-  <li><strong>Protocol</strong>: Remote MCP over HTTP with bearer token authentication.</li>
+  <li><strong>Protocol</strong>: Remote MCP over HTTP. Bearer token (Claude Code CLI) and OAuth via <code>@cloudflare/workers-oauth-provider</code> (claude.ai connector UI) — both auth paths converge on <code>/mcp</code>.</li>
 </ul>
 
 <h2>Architecture</h2>
@@ -351,17 +351,19 @@ You curate a set of Markdown files about yourself and your work. A Cloudflare Wo
   Cloudflare KV (CONTEXT_KV namespace)
       |
       v
-  src/worker.ts (MCP server handler)
+  src/worker.ts (MCP server handler + OAuthProvider)
       |
       +-- src/mcp/auth.ts (constant-time bearer validation)
+      +-- src/mcp/oauth.ts (OAuth provider, DCR, /authorize login page)
       +-- src/mcp/tools.ts (MCP tool handlers)
       +-- src/kv.ts (read-only KV helpers)
       |
       v
-  MCP endpoints (read: get_context, list_sections, get_meta)
-                 (write: append_journal, list_journal)
+  /mcp (apiRoute) — validates bearer OR OAuth token, dispatches by resolved scope
+                 (read: get_context, list_sections, get_meta)
+                 (write: append_journal, list_journal — bearer WRITE_TOKEN only)
                  |
-                 +-- Authentication: two tokens, two scopes (read/write)
+                 +-- OAuth-issued tokens: always read-only
                  +-- Journal: append-only, ULID keys, manual promotion gate</code></pre>
 
 <h3>Key Design Decisions</h3>
@@ -370,6 +372,7 @@ You curate a set of Markdown files about yourself and your work. A Cloudflare Wo
   <li><strong>Append-only journal, manual promotion.</strong> Agents can leave notes but cannot corrupt curated context. The promotion step is where the owner filters signal from noise.</li>
   <li><strong>Two token scopes, separate secrets.</strong> Read token for sessions, write token for servers. Write leak is contained (notes only), read leak is the primary risk (context exposure).</li>
   <li><strong>Constant-time token comparison.</strong> No timing attacks. Uses crypto.subtle.digest (SHA-256 + XOR accumulate), portable across workerd and Node.</li>
+  <li><strong>OAuth login gated on READ_TOKEN, not open registration.</strong> The OAuth library reports an <code>/authorize</code> URL but doesn't implement it — without a real handler, anyone completing DCR could mint a token with zero credential check. The login page closes that gap by requiring the owner's READ_TOKEN before issuing any OAuth grant.</li>
 </ul>
 
 <h2>Development Metrics</h2>
@@ -452,9 +455,9 @@ The skill <code>.claude/skills/context-kernel/SKILL.md</code> auto-loads your co
 Agents and servers use <code>WRITE_TOKEN</code> to append journal entries. You review via <code>npm run promote</code> and hand-promote what becomes permanent.
 </p>
 
-<h3>OAuth for claude.ai Chat</h3>
+<h3>Connect claude.ai Chat (OAuth)</h3>
 <p>
-Not yet implemented (provider library incompatibility). Claude Code CLI + local servers work today.
+Add a custom connector in claude.ai pointing at your Worker's <code>/mcp</code> endpoint. Claude self-registers via Dynamic Client Registration, then redirects to a one-field login page — enter your <code>READ_TOKEN</code> once to authorize. Every OAuth-issued token is read-only; write access stays on the bearer-token path only.
 </p>
 
 <h2>Repository</h2>
@@ -465,31 +468,36 @@ Not yet implemented (provider library incompatibility). Claude Code CLI + local 
   <a href="https://github.com/dkritarth/context-kernel/blob/master/SECURITY.md">Security guidelines</a>
 </div>
 
-<h2>Token Usage (This Build)</h2>
+<h2>Token Usage &amp; Cost (OAuth Fix Session)</h2>
 <table>
   <thead>
     <tr>
-      <th>Model</th>
-      <th>Tokens Used</th>
-      <th>Primary Role</th>
+      <th>Metric</th>
+      <th>Value</th>
     </tr>
   </thead>
   <tbody>
     <tr>
+      <td>Model</td>
       <td>Claude Sonnet 5</td>
-      <td>~140k input</td>
-      <td>Main build phases (core logic, tests)</td>
     </tr>
     <tr>
-      <td>Claude Haiku 4.5</td>
-      <td>~30k input</td>
-      <td>Final Polish (OAuth attempt, docs, CLI setup)</td>
+      <td>Output tokens</td>
+      <td>~100,485</td>
+    </tr>
+    <tr>
+      <td>Cache-read tokens</td>
+      <td>~29,223,703</td>
+    </tr>
+    <tr>
+      <td>Estimated cost</td>
+      <td>~$6–10 (intro pricing: $2/$10 per MTok in/out, through 2026-08-31)</td>
     </tr>
   </tbody>
 </table>
 
 <p class="note">
-Build time: one session from blank repo to deployed. Token efficiency: caveman mode + phased agent commits reduced redundant context overhead.
+Session covered: diagnosing and fixing the OAuth 500 (missing <code>apiRoute</code> config), building the <code>/authorize</code> login page, rotating a lost WRITE_TOKEN, and end-to-end verification against the deployed Worker. Caveman-compressed communication mode kept output tokens down relative to cache-read volume.
 </p>
 
 <footer>
