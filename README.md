@@ -4,7 +4,7 @@
 
 **Status:** Live. Connects via Bearer token (Claude Code CLI) and OAuth (claude.ai connector UI), both verified end-to-end against a deployed Worker.
 
-> *"bro started building tools to help him write research paper better"* — a friend, watching this happen
+Started as a fix for one annoying thing: re-explaining myself to an AI before it could help with a research paper. Turned into infrastructure, because the real problem was never the paper — it was that nothing remembered anything.
 
 <p align="center">
   <img src="assets/claude-connector.png" alt="Claude connector settings showing context-kernel's 5 MCP tools, always-allowed" width="49%">
