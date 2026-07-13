@@ -2,6 +2,8 @@
 
 > **Self-hostable context memory for LLMs.** Keep your professional context, preferences, and evolving knowledge in sync across Claude Code, Desktop, and chat—without re-pasting or semantic drift.
 
+**Status:** Live. Connects via Bearer token (Claude Code CLI) and OAuth (claude.ai connector UI), both verified end-to-end against a deployed Worker.
+
 ---
 
 A lightweight, opinionated **context memory** built on Cloudflare Workers and KV. You curate Markdown files about yourself, your work, and your preferences. A Worker serves them to Claude (Claude Code, Desktop, chat) over a secure remote MCP connector. Agents extend the memory via an append-only journal—but only *you* decide what becomes permanent.
@@ -157,12 +159,13 @@ Replace `<READ_TOKEN>` with your token. On session start, `.claude/skills/contex
 
 The Worker also exposes OAuth endpoints for claude.ai's connector UI. To connect:
 
-1. In Claude (Desktop or browser), go to **Settings** → **Custom connectors** (or your workspace's integrations)
-2. **Add custom MCP connector** with the deployed Worker URL as the base (e.g., `https://my-context-kernel.myname.workers.dev`)
-3. The Worker will automatically handle OAuth registration and token issuance—no manual client secret needed
-4. All OAuth-issued tokens grant **read-only access** to your context (write access remains restricted to direct plain-bearer `WRITE_TOKEN` only)
+1. In Claude (Desktop or browser), go to **Settings** → **Connectors**
+2. **Add custom connector** with the deployed Worker's base URL, `/mcp` endpoint (e.g., `https://my-context-kernel.myname.workers.dev/mcp`)
+3. Claude registers itself automatically (Dynamic Client Registration, RFC 7591)—no manual client ID or secret
+4. You'll land on a one-field login page asking for your `READ_TOKEN` (the same token from `wrangler secret put READ_TOKEN`)—enter it once to authorize
+5. All OAuth-issued tokens grant **read-only access** to your context (write access remains restricted to direct plain-bearer `WRITE_TOKEN` only)
 
-The OAuth layer is optional; existing Claude Code + Bearer token setups continue to work unchanged.
+The OAuth layer is optional; existing Claude Code + Bearer token setups continue to work unchanged, and the two flows share nothing but the underlying `/mcp` endpoint.
 
 ### Full deploy walkthrough
 
@@ -218,6 +221,18 @@ semantic search over your history. It optimizes for the memory being *trustworth
 `profile`, `goals`, `current-work`, `resume`, `writing-prefs`, `figure-prefs`, `answer-prefs`,
 `skills`, `env-constants`. Add only what an authorized Claude session should see; leave out
 contact-heavy details.
+
+## Build stats
+
+This build ran end-to-end with Claude Code (Sonnet 5, caveman-compressed communication mode).
+
+| Metric | Value |
+|---|---|
+| Commits | 23 |
+| Test coverage | 100/100 passing |
+| Session output tokens | ~100K |
+| Cache-read tokens | ~29.2M |
+| Estimated session cost | ~$6–10 (Sonnet 5 intro pricing: $2/$10 per MTok in/out through 2026-08-31) |
 
 ## Repository hygiene
 
