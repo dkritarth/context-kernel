@@ -61,6 +61,7 @@ function makeEnv(kv: FakeKVNamespace): Env {
     // actually calls; cast at this one boundary rather than reimplementing
     // the full (large) real interface.
     CONTEXT_KV: kv as unknown as KVNamespace,
+    OAUTH_KV: kv as unknown as KVNamespace,
     READ_TOKEN,
     WRITE_TOKEN,
   };

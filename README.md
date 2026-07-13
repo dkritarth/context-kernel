@@ -153,7 +153,16 @@ claude mcp add --transport http context-kernel \
 
 Replace `<READ_TOKEN>` with your token. On session start, `.claude/skills/context-kernel/SKILL.md` auto-loads your context.
 
-**Known limitation:** OAuth for claude.ai chat not yet working (library runtime incompatibility). Claude Code CLI (above) and local dev work fine with Bearer tokens.
+### Connect claude.ai chat interface (via OAuth)
+
+The Worker also exposes OAuth endpoints for claude.ai's connector UI. To connect:
+
+1. In Claude (Desktop or browser), go to **Settings** → **Custom connectors** (or your workspace's integrations)
+2. **Add custom MCP connector** with the deployed Worker URL as the base (e.g., `https://my-context-kernel.myname.workers.dev`)
+3. The Worker will automatically handle OAuth registration and token issuance—no manual client secret needed
+4. All OAuth-issued tokens grant **read-only access** to your context (write access remains restricted to direct plain-bearer `WRITE_TOKEN` only)
+
+The OAuth layer is optional; existing Claude Code + Bearer token setups continue to work unchanged.
 
 ### Full deploy walkthrough
 

@@ -151,15 +151,26 @@ script (`scripts/promote.ts`), never an agent-callable tool. This is the enforce
 
 ## 6. Auth model
 
-- Worker `fetch` handler checks a bearer token **before** dispatching any MCP request or touching
-  KV. Unauthorized → `401`, no KV read.
-- Two secrets: `READ_TOKEN` and `WRITE_TOKEN`. The Worker maps each incoming token to an allowed
-  tool set. Read token cannot invoke write tools.
-- Use a constant-time comparison for token checks (no early-exit string compare).
-- If the Claude connector UI requires OAuth rather than a static bearer, use Cloudflare's MCP OAuth
-  provider library and issue the owner a single-user client. Confirm current requirement in Step 0.
+**Dual-mode auth** (bearer + OAuth):
+
+1. **Plain-bearer tokens (Claude Code, trusted servers):**
+   - Worker `fetch` handler checks a bearer token **before** dispatching any MCP request or touching
+     KV. Unauthorized → `401`, no KV read.
+   - Two secrets: `READ_TOKEN` and `WRITE_TOKEN`. Each incoming token is mapped to an allowed
+     tool set. Read token cannot invoke write tools.
+   - Use a constant-time comparison for token checks (no early-exit string compare).
+
+2. **OAuth flow (claude.ai connector UI):**
+   - OAuthProvider wraps the MCP handler, routing OAuth paths internally and delegating `/mcp` requests.
+   - Supports Dynamic Client Registration (RFC 7591) for automatic client setup by claude.ai.
+   - All OAuth-issued tokens grant read-only access (mapped to "read" scope). Write access remains
+     restricted to direct plain-bearer `WRITE_TOKEN` only.
+   - OAuth state (clients, grants, tokens) stored in a separate `OAUTH_KV` namespace for isolation.
+
+**Secrets and configuration:**
 - Secrets live in Cloudflare (`wrangler secret put`), never in the repo.
 - Token-gated responses: `Cache-Control: private, max-age=60`.
+- Two KV namespaces: `CONTEXT_KV` (curated context + journal) and `OAUTH_KV` (OAuth state).
 
 ---
 
@@ -177,6 +188,7 @@ context-kernel/
     mcp/
       tools.ts              # tool definitions + handlers
       auth.ts               # token gate, constant-time compare
+      oauth.ts              # OAuth provider (for claude.ai connector UI)
     kv.ts                   # KV key helpers
     types.ts
   scripts/

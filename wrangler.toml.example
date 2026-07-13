@@ -19,6 +19,11 @@ binding = "CONTEXT_KV"
 id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
 preview_id = "REPLACE_WITH_YOUR_KV_PREVIEW_NAMESPACE_ID"
 
+[[kv_namespaces]]
+binding = "OAUTH_KV"
+id = "REPLACE_WITH_YOUR_OAUTH_KV_NAMESPACE_ID"
+preview_id = "REPLACE_WITH_YOUR_OAUTH_KV_PREVIEW_NAMESPACE_ID"
+
 # Secrets (READ_TOKEN, WRITE_TOKEN) are NOT set here.
 # Set them with: wrangler secret put READ_TOKEN
 #                wrangler secret put WRITE_TOKEN
