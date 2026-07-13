@@ -4,6 +4,11 @@
 
 **Status:** Live. Connects via Bearer token (Claude Code CLI) and OAuth (claude.ai connector UI), both verified end-to-end against a deployed Worker.
 
+<p align="center">
+  <img src="assets/claude-connector.png" alt="Claude connector settings showing context-kernel's 5 MCP tools, always-allowed" width="49%">
+  <img src="assets/cloudflare-dashboard.png" alt="Cloudflare Workers dashboard for context-kernel, showing both KV bindings live" width="49%">
+</p>
+
 ---
 
 A lightweight, opinionated **context memory** built on Cloudflare Workers and KV. You curate Markdown files about yourself, your work, and your preferences. A Worker serves them to Claude (Claude Code, Desktop, chat) over a secure remote MCP connector. Agents extend the memory via an append-only journal—but only *you* decide what becomes permanent.
