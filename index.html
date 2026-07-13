@@ -468,36 +468,41 @@ Add a custom connector in claude.ai pointing at your Worker's <code>/mcp</code> 
   <a href="https://github.com/dkritarth/context-kernel/blob/master/SECURITY.md">Security guidelines</a>
 </div>
 
-<h2>Token Usage &amp; Cost (OAuth Fix Session)</h2>
+<h2>Token Usage &amp; Cost (All Sessions)</h2>
+<p class="note">Aggregated across every local Claude Code session on this repo, scaffold through the deployed OAuth fix.</p>
 <table>
   <thead>
     <tr>
-      <th>Metric</th>
-      <th>Value</th>
+      <th>Model</th>
+      <th>Output tokens</th>
+      <th>Cache-read tokens</th>
+      <th>Cache-creation tokens</th>
     </tr>
   </thead>
   <tbody>
     <tr>
-      <td>Model</td>
       <td>Claude Sonnet 5</td>
+      <td>239,096</td>
+      <td>73,379,771</td>
+      <td>1,841,956</td>
     </tr>
     <tr>
-      <td>Output tokens</td>
-      <td>~100,485</td>
+      <td>Claude Haiku 4.5</td>
+      <td>113,515</td>
+      <td>29,514,258</td>
+      <td>757,289</td>
     </tr>
     <tr>
-      <td>Cache-read tokens</td>
-      <td>~29,223,703</td>
-    </tr>
-    <tr>
-      <td>Estimated cost</td>
-      <td>~$6–10 (intro pricing: $2/$10 per MTok in/out, through 2026-08-31)</td>
+      <td><strong>Total</strong></td>
+      <td><strong>352,611</strong></td>
+      <td><strong>102,894,029</strong></td>
+      <td><strong>2,599,245</strong></td>
     </tr>
   </tbody>
 </table>
 
 <p class="note">
-Session covered: diagnosing and fixing the OAuth 500 (missing <code>apiRoute</code> config), building the <code>/authorize</code> login page, rotating a lost WRITE_TOKEN, and end-to-end verification against the deployed Worker. Caveman-compressed communication mode kept output tokens down relative to cache-read volume.
+Estimated total cost: <strong>~$26</strong> (Sonnet 5 intro pricing $2/$10 per MTok in/out through 2026-08-31, plus 5-min cache-write premium; Haiku 4.5 at standard $1/$5 per MTok). Covers scaffolding, all six build phases, docs, the two reverted OAuth attempts, this session's OAuth fix (missing <code>apiRoute</code> config, <code>/authorize</code> login page, WRITE_TOKEN rotation), and end-to-end verification. Caveman-compressed communication mode kept output tokens low relative to cache-read volume.
 </p>
 
 <footer>
